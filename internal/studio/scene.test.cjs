@@ -533,6 +533,10 @@ test("reference banner uses a corner title sponsor, stacked lead logos and no ti
   assert.equal(heading.hidden, true);
   assert.ok(title.children[0].x >= 570 && title.children[0].y >= 125);
   assert.ok(headline.children[1].y > headline.children[0].y);
+  assert(
+    headline.children.every((n) => n.y + n.height <= 1590),
+    "sponsors must leave room for the footer and roll-up margin",
+  );
 });
 
 test("crowding warnings are invariant when a print layout changes units", () => {

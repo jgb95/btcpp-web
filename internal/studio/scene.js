@@ -391,8 +391,9 @@
     const total = groups.reduce((sum, g) => sum + demand(g), 0);
     const bandGap = (reel ? 28 : 20) * settings.spacing;
     const headingSpace = reel || settings.noHeadings ? 0 : 26;
+    // Leave room for the footer above the banner's six-inch roll-up margin.
     const available =
-      (reel ? 870 : 1430) -
+      (reel ? 870 : 1330) -
       Math.max(0, groups.length - 1) * bandGap -
       groups.length * headingSpace;
     let top = reel ? 110 : 260;

@@ -56,7 +56,7 @@ func studioDefault(app *config.AppContext, conf *types.Conf, kind string) (studi
 func studioBannerTemplate(conf *types.Conf, sponsors []*types.Sponsorship) studio.Document {
 	d := studio.New("banner")
 	d.Page.Bleed = 0
-	d.Background = studio.Background{Asset: d.Asset(confImagePath(conf.Tag, "leading")), Color: "#111917", Darkness: .8, Bound: true}
+	d.Background = studio.Background{Asset: d.Asset(confImagePath(conf.Tag, "leading")), Color: "#111917", Darkness: .5, Bound: true}
 	title, dates := strings.ToUpper(conf.Tagline), conf.DateDesc
 	if conf.Tag == "berlin26" {
 		title = "PAYMENTS EDITION"
@@ -70,12 +70,15 @@ func studioBannerTemplate(conf *types.Conf, sponsors []*types.Sponsorship) studi
 		n.FontSize = math.Min(size, width/math.Max(1, float64(utf8.RuneCountInString(text))*.61))
 		d.Nodes = append(d.Nodes, n)
 	}
-	addText("title", "Edition title", title, 180, 1690, 140, 1400, -90, "BannerMono", "#ffffff", &studio.Binding{Field: "title"})
+	addText("title", "Edition title", title, 180, 1590, 140, 1400, -90, "BannerMono", "#ffffff", &studio.Binding{Field: "title"})
 	addText("wordmark", "bitcoin++", "bitcoin++", 550, 150, 61, 1000, 0, "BannerBrand", "#ffffff", nil)
-	addText("location", "Location", conf.Location, 125, 1800, 39, 650, 0, "BannerMono", "#ffffff", &studio.Binding{Field: "location"})
-	addText("dates", "Dates", dates, 125, 1855, 39, 650, 0, "BannerMono", "#ffffff", &studio.Binding{Field: "dates"})
-	addText("venue", "Venue", conf.Venue, 125, 1910, 30, 650, 0, "BannerMono", "#ffffff", &studio.Binding{Field: "venue"})
-	addText("website", "Website", "btcpp.dev", 125, 1960, 39, 650, 0, "BannerMono", "#ffffff", nil)
+	// The bottom six inches feed into the roll-up base. Keep the footer above it,
+	// with room for text descenders; the background still fills the entire page.
+	footer := d.Page.Height - 6*25.4 - 20
+	addText("location", "Location", conf.Location, 125, footer-160, 39, 650, 0, "BannerMono", "#ffffff", &studio.Binding{Field: "location"})
+	addText("dates", "Dates", dates, 125, footer-105, 39, 650, 0, "BannerMono", "#ffffff", &studio.Binding{Field: "dates"})
+	addText("venue", "Venue", conf.Venue, 125, footer-50, 30, 650, 0, "BannerMono", "#ffffff", &studio.Binding{Field: "venue"})
+	addText("website", "Website", "btcpp.dev", 125, footer, 39, 650, 0, "BannerMono", "#ffffff", nil)
 	tiers := groupSponsorTiers(sponsors)
 	for i, tier := range tiers {
 		label := strings.ToUpper(tier.Label)
@@ -107,7 +110,7 @@ func studioBannerTemplate(conf *types.Conf, sponsors []*types.Sponsorship) studi
 
 func studioReelTemplate(conf *types.Conf, sponsors []*types.Sponsorship) studio.Document {
 	d := studio.New("reel")
-	d.Background = studio.Background{Asset: d.Asset(confImagePath(conf.Tag, "leading")), Color: "#111917", Darkness: .65, Bound: true}
+	d.Background = studio.Background{Asset: d.Asset(confImagePath(conf.Tag, "leading")), Color: "#111917", Darkness: .5, Bound: true}
 	for _, group := range []struct{ id, label string }{{"headline", "Headline sponsors"}, {"title", "Title sponsors"}, {"workshop", "Workshop / hackathon"}, {"silver", "Silver sponsors"}, {"regular", "Regular sponsors"}} {
 		n := studio.Item("tier-"+group.id, "group", group.label)
 		n.Binding = &studio.Binding{Tier: group.id}
@@ -173,7 +176,6 @@ func studioTemplateDefaults(d *studio.Document) {
 	})
 	if d.Template == "banner" {
 		d.Generation = &studio.Generation{Size: 1, Spacing: 1, NoHeadings: true, BannerReference: true}
-		d.Background.Darkness = .35
 		for _, n := range d.Nodes {
 			if n.ID == "text-wordmark" {
 				n.X = 535

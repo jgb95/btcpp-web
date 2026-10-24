@@ -1,4 +1,4 @@
-<!doctype html><html><head><title>{{ .Conf.Desc }} · Studio</title>{{ block "header" . }}{{ end }}{{ template "admin_favicon" .Conf }}<link rel="stylesheet" href="/static/css/studio.css?v=18"></head>
+<!doctype html><html><head><title>{{ .Conf.Desc }} · Studio</title>{{ block "header" . }}{{ end }}{{ template "admin_favicon" .Conf }}<link rel="stylesheet" href="/static/css/studio.css?v=23"></head>
 <body class="btcpp-admin-page">{{ block "mainnav" . }}{{ end }}
 <main class="studio studio-library"><header class="studio-heading"><div><a href="/{{ .Conf.Tag }}/admin">← Dashboard</a><h1>Studio</h1><p>{{ .Conf.Desc }}</p></div><div class="studio-new"><label for="new-template">New design</label><select id="new-template"><option value="banner">Sponsor banner</option><option value="overlay">Sponsor overlay</option><option value="reel">Sponsor reel</option></select><button id="new-design" class="primary">Create</button></div></header>
 <p id="studio-message" role="status"></p><button id="undo-delete" hidden>Undo deletion</button><div id="studio-designs" class="studio-cards"></div>

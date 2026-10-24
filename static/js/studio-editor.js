@@ -27,9 +27,8 @@
     generationFocus = "",
     initialSetup = false,
     backgroundEditing = false;
-  const snapshot = () => ({ name, document: S.clone(d) }),
-    savedInitial = JSON.stringify(snapshot());
-  let saved = savedInitial,
+  const snapshot = () => ({ name, document: S.clone(d) });
+  let saved = JSON.stringify(snapshot()),
     hist = S.history(snapshot());
   const dirty = () => JSON.stringify(snapshot()) !== saved,
     nodes = () => S.all(d),
@@ -113,15 +112,6 @@
     });
     $("undo").disabled = busy || !hist.canUndo;
     $("redo").disabled = busy || !hist.canRedo;
-    for (const id of [
-      "duplicate-design",
-      "play",
-      "add-text",
-      "add-image",
-      "replace-image",
-      "regenerate-template",
-    ])
-      $(id).disabled = busy;
     $("artwork-warning").textContent = scene?.missing.length
       ? "Artwork needs attention: " + scene.missing.join(", ")
       : "";
@@ -145,7 +135,6 @@
         (command === "ungroup" && !ns.some((n) => n.kind === "group"));
     });
     $("align-command").disabled = busy || !unlocked;
-    $("selection-tip").hidden = true;
     for (const id of ["object-opacity", "object-rotation"]) {
       $(id).disabled = busy || !unlocked;
     }
@@ -1388,6 +1377,22 @@
   document.querySelectorAll("[data-activate]").forEach((el) => {
     el.onclick = () => $(el.dataset.activate).click();
   });
+  // Main menus and the export submenu use the same list-navigation keys.
+  function moveMenuFocus(e, buttons) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    const at = buttons.indexOf(document.activeElement);
+    const next =
+      e.key === "Home"
+        ? 0
+        : e.key === "End"
+          ? buttons.length - 1
+          : (at + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) %
+            buttons.length;
+    buttons[next]?.focus();
+    return true;
+  }
   const menus = [...document.querySelectorAll(".studio-menubar button")];
   for (const [index, trigger] of menus.entries()) {
     const panel = $(trigger.getAttribute("popovertarget"));
@@ -1414,6 +1419,16 @@
     panel.addEventListener("toggle", () => {
       trigger.setAttribute("aria-expanded", panel.matches(":popover-open"));
     });
+    function switchMenu(key, open) {
+      if (panel.matches(":popover-open")) panel.hidePopover();
+      const next =
+        menus[
+          (index + (key === "ArrowRight" ? 1 : -1) + menus.length) %
+            menus.length
+        ];
+      next.focus();
+      if (open) $(next.getAttribute("popovertarget")).showPopover();
+    }
     trigger.addEventListener("keydown", (e) => {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -1422,40 +1437,14 @@
         (e.key === "ArrowDown" ? buttons[0] : buttons.at(-1))?.focus();
       } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
-        const open = panel.matches(":popover-open");
-        if (open) panel.hidePopover();
-        const next =
-          menus[
-            (index + (e.key === "ArrowRight" ? 1 : -1) + menus.length) %
-              menus.length
-          ];
-        next.focus();
-        if (open) $(next.getAttribute("popovertarget")).showPopover();
+        switchMenu(e.key, panel.matches(":popover-open"));
       }
     });
     panel.addEventListener("keydown", (e) => {
-      const buttons = items(),
-        at = buttons.indexOf(document.activeElement);
-      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+      if (moveMenuFocus(e, items())) return;
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
-        const next =
-          e.key === "Home"
-            ? 0
-            : e.key === "End"
-              ? buttons.length - 1
-              : (at + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) %
-                buttons.length;
-        buttons[next]?.focus();
-      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        e.preventDefault();
-        panel.hidePopover();
-        const next =
-          menus[
-            (index + (e.key === "ArrowRight" ? 1 : -1) + menus.length) %
-              menus.length
-          ];
-        next.focus();
-        $(next.getAttribute("popovertarget")).showPopover();
+        switchMenu(e.key, true);
       }
     });
     panel.addEventListener(
@@ -1544,25 +1533,15 @@
     }
   });
   $("export-submenu").addEventListener("keydown", (e) => {
-    if (["ArrowUp", "ArrowDown", "Home", "End", "ArrowRight"].includes(e.key)) {
+    const buttons = [
+      ...$("export-submenu").querySelectorAll(
+        "button:not([hidden]):not(:disabled)",
+      ),
+    ];
+    if (moveMenuFocus(e, buttons)) return;
+    if (e.key === "ArrowRight") {
       e.preventDefault();
       e.stopPropagation();
-      const buttons = [
-          ...$("export-submenu").querySelectorAll(
-            "button:not([hidden]):not(:disabled)",
-          ),
-        ],
-        at = buttons.indexOf(document.activeElement);
-      const next =
-        e.key === "Home"
-          ? 0
-          : e.key === "End"
-            ? buttons.length - 1
-            : e.key === "ArrowRight"
-              ? at
-              : (at + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) %
-                buttons.length;
-      buttons[next]?.focus();
       return;
     }
     if (e.key === "ArrowLeft" || e.key === "Escape") {

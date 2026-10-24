@@ -105,10 +105,10 @@
   display: block;
   background: transparent;
   border: 1px solid transparent;
-  font-size: 26px;
+  font-size: 18px;
   font-weight: 600;
-  padding: 4px 0;
-  width: min(520px, 38vw);
+  padding: 5px;
+  width: min(300px, 25vw);
 }
 .studio #design-name:hover,
 .studio #design-name:focus {
@@ -121,11 +121,11 @@
 }
 .studio-tools {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
   border-top: 1px solid #d3cabd;
   border-bottom: 1px solid #d3cabd;
-  padding: 8px 0;
+  padding: 5px 0;
 }
 .studio-spacer {
   flex: 1;
@@ -145,8 +145,9 @@
 #studio-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 265px;
-  gap: 18px;
-  padding-top: 14px;
+  gap: 10px;
+  padding-top: 10px;
+  align-items: stretch;
 }
 #studio-workspace.with-layers {
   grid-template-columns: 190px minmax(0, 1fr) 265px;
@@ -157,11 +158,11 @@
   border: 1px solid #d6cdbf;
   padding: 14px;
   min-width: 0;
-  max-height: calc(100vh - 310px);
+  max-height: calc(100vh - 290px);
   overflow: auto;
 }
 #inspector {
-  min-height: 360px;
+  min-height: 0;
 }
 #inspector label {
   display: block;
@@ -174,33 +175,22 @@
   width: 100%;
   margin-top: 4px;
 }
-#inspector .color-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-#inspector input[type="color"] {
-  width: 34px;
-  height: 26px;
-  border: 0;
-  background: none;
-  padding: 0;
-}
 #selection-name {
   font-weight: 600;
   color: #332b22;
 }
 #selection-help {
-  min-height: 28px;
+  min-height: 0;
 }
 .studio-settings {
   border-top: 1px solid #d9d0c2;
-  padding-top: 12px;
-  margin-top: 16px;
+  padding-top: 10px;
+  margin-top: 14px;
 }
 .studio-settings summary {
   cursor: pointer;
   font-size: 12px;
+  font-weight: 600;
 }
 .studio-settings button {
   margin-top: 8px;
@@ -367,9 +357,15 @@
   background: #e9d9c1;
 }
 .studio .layer-toggle {
-  padding: 2px;
+  padding: 3px;
   min-height: 24px;
   font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: transparent;
+  background: transparent;
+  flex: none;
 }
 #studio-error {
   color: #a42e21;
@@ -381,6 +377,7 @@
   background: #faf7f1;
   padding: 24px;
   max-width: 520px;
+  width: min(440px, calc(100vw - 32px));
 }
 .studio dialog::backdrop {
   background: #0005;
@@ -436,7 +433,6 @@
   }
   #layers-drawer {
     grid-column: 1/-1;
-    max-height: 230px;
   }
   #studio-workspace {
     grid-template-columns: minmax(0, 1fr) 240px;
@@ -467,9 +463,6 @@
   #studio-workspace.with-layers {
     grid-template-columns: 1fr;
   }
-  #inspector {
-    max-height: none;
-  }
   .studio-tools {
     flex-wrap: wrap;
   }
@@ -483,26 +476,12 @@
     grid-template-columns: 100px 1fr;
   }
 }
-
 .studio-artwork:has(#video-controls[hidden]) #artboard-viewport {
   height: clamp(340px, calc(100vh - 300px), 950px);
 }
 #timeline {
   max-height: 170px;
   overflow-y: auto;
-}
-
-/* Page controls belong to the workspace; the inspector only edits selection. */
-.studio-breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-.studio-breadcrumb select {
-  max-width: 290px;
-  font-size: 12px;
-  padding: 4px 26px 4px 8px;
 }
 .studio-fields label {
   display: block;
@@ -515,11 +494,13 @@
   width: 100%;
   margin-top: 5px;
 }
+#inspector .color-label,
 .studio-fields .color-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
+#inspector input[type="color"],
 .studio-fields input[type="color"] {
   width: 34px;
   height: 26px;
@@ -527,67 +508,10 @@
   background: none;
   padding: 0;
 }
-#page-toggle {
-  anchor-name: --studio-page;
-}
-.studio-popover {
-  position: fixed;
-  inset: auto;
-  top: anchor(--studio-page bottom);
-  left: anchor(--studio-page left);
-  margin: 8px 0 0;
-  width: 300px;
-  max-width: calc(100vw - 32px);
-  max-height: 65vh;
-  overflow: auto;
-  padding: 18px;
-  border: 1px solid #c7bca9;
-  background: #faf7f1;
-  box-shadow: 0 6px 24px #302a2226;
-}
-@supports not (top: anchor(--studio-page bottom)) {
-  .studio-popover {
-    top: 300px;
-    left: 24px;
-  }
-}
-#page-panel button {
-  display: block;
-  margin-top: 8px;
-  width: 100%;
-  text-align: left;
-}
-.studio-selection-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #ddd3c5;
-}
-.studio-selection-tools select {
-  flex-basis: 100%;
-}
-.studio dialog {
-  width: min(440px, calc(100vw - 32px));
-}
 .studio dialog .studio-actions {
   margin-top: 20px;
   justify-content: flex-end;
   flex-wrap: wrap;
-}
-#selection-tip {
-  line-height: 1.7;
-}
-#inspector {
-  min-height: 0;
-}
-@media (max-width: 700px) {
-  .studio-breadcrumb {
-    flex-wrap: wrap;
-  }
-  .studio-breadcrumb select {
-    max-width: 100%;
-  }
 }
 .studio select {
   padding-right: 28px;
@@ -596,16 +520,6 @@
   background-position: right 9px center;
   background-size: 12px 8px;
 }
-.studio-selection-tools {
-  padding: 12px 0;
-  margin: 10px 0;
-  border-top: 1px solid #ddd3c5;
-  border-bottom: 0;
-}
-.studio-breadcrumb select {
-  min-height: 32px;
-}
-
 #layout-warning {
   padding: 10px;
   background: #fff0d9;
@@ -631,11 +545,6 @@
 .studio-title > a {
   white-space: nowrap;
 }
-.studio #design-name {
-  width: min(300px, 25vw);
-  font-size: 18px;
-  padding: 5px;
-}
 #design-meta {
   font-size: 11px;
   color: #766d61;
@@ -652,10 +561,6 @@
 }
 .studio-menubar button[aria-expanded="true"] {
   background: #e8dcc9;
-}
-.studio-tools {
-  gap: 4px;
-  padding: 5px 0;
 }
 .studio-divider {
   height: 20px;
@@ -702,16 +607,6 @@
     11px "IBM Plex Sans",
     sans-serif;
 }
-#studio-workspace {
-  gap: 10px;
-  padding-top: 10px;
-  align-items: stretch;
-}
-#layers-drawer,
-#inspector {
-  max-height: calc(100vh - 290px);
-  padding: 14px;
-}
 .studio-panel-heading {
   display: flex;
   justify-content: space-between;
@@ -730,21 +625,6 @@
 }
 #studio-editor .studio-artwork:has(#timeline:not([hidden])) #artboard-viewport {
   height: clamp(250px, calc(100vh - 510px), 750px);
-}
-#selection-help {
-  min-height: 0;
-}
-.studio-settings {
-  padding-top: 10px;
-  margin-top: 14px;
-}
-.studio-settings summary {
-  font-weight: 600;
-}
-.studio-selection-tools {
-  padding: 0;
-  margin: 0;
-  border: 0;
 }
 .studio-statusbar {
   display: flex;
@@ -786,16 +666,6 @@
   #inspector {
     max-height: 360px;
   }
-}
-
-.studio .layer-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-color: transparent;
-  background: transparent;
-  padding: 3px;
-  flex: none;
 }
 .studio .layer-toggle svg {
   display: block;
@@ -890,11 +760,9 @@
     max-height: 240px;
   }
 }
-
 .studio-generation:has(.studio-generation-options[hidden]) {
   grid-template-columns: 1fr;
 }
-
 .studio-export-menu {
   position: relative;
 }
@@ -943,7 +811,6 @@
     z-index: 1;
   }
 }
-
 #file-menu {
   overflow: visible;
 }

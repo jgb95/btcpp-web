@@ -3,7 +3,7 @@
   <head>
     <title>{{ .Conf.Desc }} · Studio design</title>
     {{ block "header" . }}{{ end }}{{ template "admin_favicon" .Conf }}
-    <link rel="stylesheet" href="/static/css/studio.css?v=21" />
+    <link rel="stylesheet" href="/static/css/studio.css?v=23" />
   </head>
   <body class="btcpp-admin-page">
     {{ block "mainnav" . }}{{ end }}
@@ -167,7 +167,6 @@
           <h2 id="inspector-heading">Properties</h2>
           <p id="selection-name">Nothing selected</p>
           <p id="selection-help">Select an object to edit it.</p>
-          <p id="selection-tip">Find items in View → Layers.</p>
           <div id="selection-properties" hidden>
             <div id="text-properties" hidden>
               <label
@@ -230,19 +229,17 @@
             </details>
             <details class="studio-settings">
               <summary>Align & space</summary>
-              <div class="studio-selection-tools">
-                <select id="align-command" aria-label="Align and space">
-                  <option value="">Align / space…</option>
-                  <option value="left">Left edges</option>
-                  <option value="center">Horizontal centers</option>
-                  <option value="right">Right edges</option>
-                  <option value="top">Top edges</option>
-                  <option value="middle">Vertical centers</option>
-                  <option value="bottom">Bottom edges</option>
-                  <option value="space-x">Space horizontally</option>
-                  <option value="space-y">Space vertically</option>
-                </select>
-              </div>
+              <select id="align-command" aria-label="Align and space">
+                <option value="">Align / space…</option>
+                <option value="left">Left edges</option>
+                <option value="center">Horizontal centers</option>
+                <option value="right">Right edges</option>
+                <option value="top">Top edges</option>
+                <option value="middle">Vertical centers</option>
+                <option value="bottom">Bottom edges</option>
+                <option value="space-x">Space horizontally</option>
+                <option value="space-y">Space vertically</option>
+              </select>
             </details>
             <details class="studio-settings" id="timing-properties" hidden>
               <summary>Animation</summary>
@@ -298,7 +295,8 @@
               ><button id="adjust-background">Adjust background</button>
               <div id="background-edit-controls" hidden>
                 <p>
-                  Drag to move; zoom to crop. The image always covers the canvas. Escape finishes.
+                  Drag to move; zoom to crop. The image always covers the
+                  canvas. Escape finishes.
                 </p>
                 <label
                   >Zoom <output id="background-zoom-value"></output
@@ -459,6 +457,6 @@
       window.studioBoot={{ .Boot }};
     </script>
     <script src="/{{ .Conf.Tag }}/admin/studio/scene.js" defer></script>
-    <script src="/static/js/studio-editor.js?v=29" defer></script>
+    <script src="/static/js/studio-editor.js?v=30" defer></script>
   </body>
 </html>

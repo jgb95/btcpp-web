@@ -107,6 +107,9 @@ func TestStudioDirectTemplates(t *testing.T) {
 				if len(found) != expected {
 					t.Fatalf("sponsor identities lost: got %d want %d", len(found), expected)
 				}
+				if kind != "overlay" && d.Background.Darkness != .5 {
+					t.Fatal("banner and reel backgrounds should default to 50% darkness")
+				}
 				if kind == "banner" && (d.Page.Bleed != 0 || d.Generation == nil || !d.Generation.NoHeadings) {
 					t.Fatal("banner defaults changed")
 				}
@@ -132,5 +135,26 @@ func TestStudioDirectTemplates(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestStudioBannerRollupMargin(t *testing.T) {
+	d := studioBannerTemplate(&types.Conf{Tag: "berlin26", Location: "Berlin, Germany", DateDesc: "1–3 October 2026", Venue: "w3.hub"}, nil)
+	footerCount := 0
+	for _, n := range d.Nodes {
+		switch n.ID {
+		case "text-title":
+			if n.Y > 1590 {
+				t.Fatal("vertical edition title overlaps the footer")
+			}
+		case "text-location", "text-dates", "text-venue", "text-website":
+			footerCount++
+			if n.Y-n.FontSize < 1590 || n.Y+n.FontSize*.4 > d.Page.Height-6*25.4 {
+				t.Fatalf("%s overlaps the sponsor area or roll-up margin", n.ID)
+			}
+		}
+	}
+	if footerCount != 4 {
+		t.Fatal("missing banner footer text")
 	}
 }
