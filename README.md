@@ -150,6 +150,85 @@ can change the color from the event-details page without deploying new code.
 This will put all the files necessary to serve the site into `target/`
 
 
+## Studio
+
+Open **Studio** from an event's admin dashboard (`/{conf}/admin/studio`). Create
+named designs from **Banner**, **Sponsor overlay**, or **Sponsor reel**. New designs
+open a setup preview where sponsors and tiers can be included or excluded before
+applying the template. Empty tiers leave no gaps; incomplete rows stay centered.
+Below Silver, sponsors share the Regular group. Crowded tiers produce a warning
+without dropping sponsors or adding video scenes.
+
+All productions use the same SVG editor. Click to select, Shift-click for multiple
+selection, drag to move, and drag a corner to resize proportionally. Text bounds
+follow rendered text. The inspector provides text/font/color corrections, artwork
+replacement, and image effects. Edit and Insert contain grouping, alignment,
+layering, and custom-content commands; View opens Layers and the video timeline.
+Undo/Redo includes complete drag gestures, generation, uploads and timing edits.
+Hold Space to pan the workspace; Fit and zoom work for either orientation.
+
+When nothing is selected, the inspector shows document/background controls.
+**Adjust background** uses dragging and zoom, constrained to keep the image covering
+the canvas in both preview and export. Overlay checkerboards and sample frames are
+preview-only. **File → Document setup** changes Graphic/Video type and canvas size
+in pixels, millimetres or inches (video uses pixels). Unit changes preserve physical
+size at 96 px/inch; canvas resizing leaves objects in place. Older documents retain
+saved padding without exposing bleed controls.
+
+Save is explicit. Unsaved changes are marked, leaving prompts to save or discard,
+and concurrent saves return a conflict without losing local edits. **File → Export
+as** saves first and renders that exact revision: Graphic offers PNG/PDF and Video
+offers MP4. File also provides duplication, recoverable deletion, and regeneration.
+**Regenerate from template** warns before replacing the entire composition, including
+manual corrections and replacement originals; Undo restores the previous design.
+Event data is a starting snapshot and never silently changes saved artwork.
+
+- **Banner:** new designs use 850 × 2030 mm, with no sponsor headings. PDF preserves
+  physical dimensions, vector logos, and selectable text; PNG uses 96 px/inch.
+- **Overlay:** transparent 1920 × 1080. Includes the event's Headline/Diamond sponsors,
+  the bitcoin++ SVG, and powered-by branding only when a Title sponsor is included.
+- **Reel:** 1920 × 1080 at 30 fps, one screen with one second at each end. Uses
+  Headline/Diamond, Title, Workshop/Hackathon, Silver and Regular tiers, skipping
+  empty groups. Layout prominence follows the final Berlin recording asset.
+  Play/scrub evaluates animation at an explicit timestamp; the timeline supports
+  dragging bars/endpoints and precise group timing. MP4 uses H.264 High/yuv420p,
+  6.8 Mbps target, two-second keyframes, silent stereo AAC at 48 kHz/160 kbps and
+  faststart, matching conf-render. Videos support 2–30 seconds.
+
+The versioned document and shared SVG renderer live in `internal/studio`; the
+editor uses plain JavaScript and Go templates. Selection handles never enter
+exports. Artwork loading is allowlisted, bounded and deduplicated. Generation
+measures transparent padding through a temporary raster preview, retaining the
+original vector artwork and saved bounds for preview/export. Uploads are limited
+to 10 MB each; documents to 32 MB, 500 objects and eight group levels. Missing
+artwork or bundled fonts produces an error. Font uploads are not supported.
+
+Canonical connected bitcoin++ logos are `static/img/btcpp-logo-white.svg` and
+`btcpp-logo-black.svg`. Studio embeds originals per document. Old standalone text
+wordmarks convert to vector objects when opened in Studio, retaining transforms.
+The public site's existing wordmark treatment is unchanged.
+
+Migration 149 creates the event-scoped `studio_documents` table with revision
+checks and recoverable deletion. Templates generate this document format directly;
+there are no standalone prototype tables or automatic draft importers. Saved
+version-1 documents retain their artwork, positions and timing when opened.
+
+Chrome, FFmpeg and ffprobe are required (included in Docker). Set `CHROME_PATH`
+when needed. Exports have bounded concurrency, a five-minute render timeout and
+temporary-file cleanup; allow six minutes at the proxy.
+
+```sh
+node --test internal/studio/scene.test.cjs
+CGO_ENABLED=0 go test ./internal/studio ./internal/handlers -run 'TestStudio|TestDocument|TestArtwork|TestFreeze'
+# Optional real Chrome/FFmpeg checks:
+STUDIO_RENDER_TEST=1 CGO_ENABLED=0 go test ./internal/studio -v
+# Local development database only; creates/removes its own fixture:
+STUDIO_DB_TEST=1 CGO_ENABLED=0 go test ./internal/handlers -run TestStudioRevisionAndScope -v
+```
+
+On macOS, use `TMPDIR=/tmp` when running the full Go suite if GPG cannot create
+its agent socket under the longer default temporary path.
+
 ## Recording autopublisher
 
 The per-event recordings dashboard lives at `/{conf}/admin/recordings` and can auto-publish recording rows that have `FileURI` and `PublishAt` set. Enable the background worker with:

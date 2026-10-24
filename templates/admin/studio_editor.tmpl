@@ -1,0 +1,464 @@
+<!doctype html>
+<html>
+  <head>
+    <title>{{ .Conf.Desc }} · Studio design</title>
+    {{ block "header" . }}{{ end }}{{ template "admin_favicon" .Conf }}
+    <link rel="stylesheet" href="/static/css/studio.css?v=21" />
+  </head>
+  <body class="btcpp-admin-page">
+    {{ block "mainnav" . }}{{ end }}
+    <main id="studio-editor" class="studio">
+      <header class="studio-heading">
+        <div class="studio-title">
+          <a id="studio-back" href="/{{ .Conf.Tag }}/admin/studio">← Studio</a
+          ><input
+            id="design-name"
+            aria-label="Design name"
+            maxlength="160"
+          /><span id="design-meta">{{ .Conf.Desc }}</span>
+        </div>
+        <div class="studio-actions">
+          <span id="save-status" role="status">Loading…</span
+          ><button id="save" class="primary" title="Save (⌘/Ctrl S)">
+            Save
+          </button>
+        </div>
+      </header>
+      <p id="studio-error" role="alert" hidden></p>
+      <div class="studio-tools">
+        <nav class="studio-menubar" aria-label="Editor menus">
+          <button
+            id="file-menu-toggle"
+            popovertarget="file-menu"
+            aria-haspopup="true"
+          >
+            File
+          </button>
+          <button
+            id="edit-menu-toggle"
+            popovertarget="edit-menu"
+            aria-haspopup="true"
+          >
+            Edit
+          </button>
+          <button
+            id="insert-menu-toggle"
+            popovertarget="insert-menu"
+            aria-haspopup="true"
+          >
+            Insert
+          </button>
+          <button
+            id="view-menu-toggle"
+            popovertarget="view-menu"
+            aria-haspopup="true"
+          >
+            View
+          </button>
+        </nav>
+        <span class="studio-divider"></span
+        ><button id="undo" title="Undo (⌘/Ctrl Z)" aria-label="Undo">↶</button
+        ><button id="redo" title="Redo (⌘/Ctrl Shift Z)" aria-label="Redo">
+          ↷
+        </button>
+      </div>
+      <div id="file-menu" class="studio-dropdown" popover aria-label="File">
+        <button data-activate="save">Save <kbd>⌘/Ctrl S</kbd></button>
+        <div class="studio-export-menu">
+          <button
+            id="export-menu-toggle"
+            aria-expanded="false"
+            aria-controls="export-submenu"
+          >
+            Export as <span>›</span>
+          </button>
+          <div id="export-submenu" hidden aria-label="Export formats">
+            <button data-export="pdf">PDF…</button
+            ><button data-export="png">PNG…</button
+            ><button data-export="mp4">MP4…</button>
+          </div>
+        </div>
+        <hr />
+        <button id="document-setup">Document setup…</button>
+        <button id="regenerate-template">Regenerate from template…</button>
+        <button id="duplicate-design">Duplicate design</button>
+        <hr />
+        <button id="delete-design" class="danger">Delete design…</button>
+      </div>
+      <div id="edit-menu" class="studio-dropdown" popover aria-label="Edit">
+        <button data-activate="undo">Undo <kbd>⌘/Ctrl Z</kbd></button
+        ><button data-activate="redo">Redo <kbd>⇧ ⌘/Ctrl Z</kbd></button>
+        <hr />
+        <button data-command="duplicate">Duplicate <kbd>⌘/Ctrl D</kbd></button
+        ><button data-command="remove">Delete <kbd>Delete</kbd></button>
+        <hr />
+        <button data-command="group">Group <kbd>⌘/Ctrl G</kbd></button
+        ><button data-command="ungroup">Ungroup <kbd>⇧ ⌘/Ctrl G</kbd></button>
+        <button data-command="forward">Bring forward</button
+        ><button data-command="backward">Send backward</button>
+      </div>
+      <div id="insert-menu" class="studio-dropdown" popover aria-label="Insert">
+        <button id="add-text">Text</button
+        ><button id="add-image">Image…</button>
+      </div>
+      <div id="view-menu" class="studio-dropdown" popover aria-label="View">
+        <button
+          id="layers-toggle"
+          aria-expanded="false"
+          aria-controls="layers-drawer"
+        >
+          Layers <span data-check></span></button
+        ><button
+          id="timeline-toggle"
+          aria-expanded="false"
+          aria-controls="timeline"
+        >
+          Timeline <span data-check></span>
+        </button>
+        <hr />
+        <button data-activate="fit">Fit to window</button
+        ><button data-activate="zoom-in">Zoom in</button
+        ><button data-activate="zoom-out">Zoom out</button>
+      </div>
+      <div id="studio-workspace">
+        <aside id="layers-drawer" hidden>
+          <div class="studio-panel-heading">
+            <h2>Layers</h2>
+            <button data-activate="layers-toggle" aria-label="Close layers">
+              ×
+            </button>
+          </div>
+          <div id="layers-list"></div>
+          <div class="studio-add">
+            <button data-command="backward">Move down</button
+            ><button data-command="forward">Move up</button>
+          </div>
+        </aside>
+        <section class="studio-artwork">
+          <div id="artboard-viewport" tabindex="0" aria-label="Design canvas">
+            <div id="artboard">
+              <div id="scene-host"></div>
+              <svg id="selection-overlay" aria-label="Selection handles"></svg>
+            </div>
+          </div>
+          <div id="video-controls" hidden>
+            <div class="studio-transport">
+              <button id="play">Play</button
+              ><button
+                id="edit-layout"
+                title="Stop preview and return to editing"
+              >
+                Stop</button
+              ><input
+                id="scrub"
+                type="range"
+                min="0"
+                step="0.0333333333"
+                value="0"
+                aria-label="Preview time"
+              /><output id="time"></output>
+            </div>
+            <div hidden id="timeline" aria-label="Animation timeline"></div>
+          </div>
+          <p id="artwork-warning" role="status"></p>
+          <p id="layout-warning" role="status" hidden></p>
+        </section>
+        <aside id="inspector" class="studio-fields">
+          <h2 id="inspector-heading">Properties</h2>
+          <p id="selection-name">Nothing selected</p>
+          <p id="selection-help">Select an object to edit it.</p>
+          <p id="selection-tip">Find items in View → Layers.</p>
+          <div id="selection-properties" hidden>
+            <div id="text-properties" hidden>
+              <label
+                >Text<textarea
+                  id="text-content"
+                  rows="3"
+                  maxlength="2000"
+                ></textarea></label
+              ><label
+                >Font<select id="text-font">
+                  <option value="BannerMono">Courier Prime</option>
+                  <option value="BannerBrand">Ubuntu Bold Italic</option>
+                  <option value="BannerMarker">Permanent Marker</option>
+                  <option value="OverlayAeonik">Aeonik</option>
+                </select></label
+              ><label class="color-label"
+                >Text color<input id="text-color" type="color"
+              /></label>
+            </div>
+            <div id="image-properties" hidden>
+              <label id="title-sponsor-property" hidden
+                >Title sponsor<select id="title-sponsor"></select></label
+              ><button id="replace-image">Replace artwork…</button>
+              <details class="studio-settings">
+                <summary>Image effects</summary>
+                <label
+                  >Greyscale<input
+                    id="image-greyscale"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01" /></label
+                ><label
+                  >Brightness<input
+                    id="image-brightness"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.01"
+                /></label>
+              </details>
+            </div>
+            <details class="studio-settings">
+              <summary>Appearance</summary>
+              <label
+                >Opacity<input
+                  id="object-opacity"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01" /></label
+              ><label
+                >Rotation<input
+                  id="object-rotation"
+                  type="number"
+                  min="-360"
+                  max="360"
+                  step="1"
+              /></label>
+            </details>
+            <details class="studio-settings">
+              <summary>Align & space</summary>
+              <div class="studio-selection-tools">
+                <select id="align-command" aria-label="Align and space">
+                  <option value="">Align / space…</option>
+                  <option value="left">Left edges</option>
+                  <option value="center">Horizontal centers</option>
+                  <option value="right">Right edges</option>
+                  <option value="top">Top edges</option>
+                  <option value="middle">Vertical centers</option>
+                  <option value="bottom">Bottom edges</option>
+                  <option value="space-x">Space horizontally</option>
+                  <option value="space-y">Space vertically</option>
+                </select>
+              </div>
+            </details>
+            <details class="studio-settings" id="timing-properties" hidden>
+              <summary>Animation</summary>
+              <label
+                >Start (s)<input
+                  id="timing-start"
+                  type="number"
+                  min="0"
+                  step="0.0333333333" /></label
+              ><label
+                >End (s)<input
+                  id="timing-end"
+                  type="number"
+                  min="0"
+                  step="0.0333333333" /></label
+              ><label
+                >Fade (s)<input
+                  id="timing-fade"
+                  type="number"
+                  min="0"
+                  max="3"
+                  step="0.05" /></label
+              ><label
+                >Rise (px)<input
+                  id="timing-rise"
+                  type="range"
+                  min="0"
+                  max="300"
+                  step="1"
+              /></label>
+            </details>
+            <button id="add-timing" hidden>Add animation</button>
+          </div>
+          <div id="document-properties" class="studio-fields">
+            <button data-activate="document-setup">Document setup…</button>
+            <h3>Background</h3>
+            <p id="page-size"></p>
+            <div id="page-background-properties">
+              <label class="color-label"
+                >Color<input id="background-color" type="color" /></label
+              ><label
+                ><input id="background-transparent" type="checkbox" />
+                Transparent</label
+              ><label
+                >Darkness<input
+                  id="background-darkness"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01" /></label
+              ><button id="replace-background">Replace background…</button
+              ><button id="remove-background">Remove background image</button
+              ><button id="adjust-background">Adjust background</button>
+              <div id="background-edit-controls" hidden>
+                <p>
+                  Drag to move; zoom to crop. The image always covers the canvas. Escape finishes.
+                </p>
+                <label
+                  >Zoom <output id="background-zoom-value"></output
+                  ><input
+                    id="background-zoom"
+                    type="range"
+                    min="1"
+                    max="8"
+                    step="0.01" /></label
+                ><button id="background-done">Done</button>
+              </div>
+            </div>
+            <div id="overlay-preview-settings" hidden>
+              <label
+                >Preview only<select id="preview-background">
+                  <option value="checker">Checkerboard</option>
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                  <option value="frame">Sample frame</option>
+                </select></label
+              ><button id="preview-frame">Choose sample frame…</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <footer class="studio-statusbar">
+        <span class="studio-hint"
+          >Shift-click to select several · Drag a corner to resize · Space +
+          drag to pan</span
+        ><span class="studio-spacer"></span><button id="fit">Fit</button
+        ><button id="zoom-out" aria-label="Zoom out">−</button
+        ><output id="zoom-value">100%</output
+        ><button id="zoom-in" aria-label="Zoom in">+</button>
+      </footer>
+      <input
+        id="image-file"
+        type="file"
+        accept=".svg,.png,.jpg,.jpeg"
+        hidden
+      /><input
+        id="background-file"
+        type="file"
+        accept=".svg,.png,.jpg,.jpeg"
+        hidden
+      /><input id="frame-file" type="file" accept=".png,.jpg,.jpeg" hidden />
+
+      <dialog id="document-dialog" class="studio-fields">
+        <h2>Document setup</h2>
+        <label
+          >Document type<select id="setup-kind">
+            <option value="graphic">Graphic</option>
+            <option value="video">Video</option>
+          </select></label
+        ><label
+          >Units<select id="setup-unit">
+            <option value="px">Pixels (px)</option>
+            <option value="mm">Millimetres (mm)</option>
+            <option value="in">Inches (in)</option>
+          </select></label
+        >
+        <div class="studio-dimensions">
+          <label
+            >Width<input
+              id="setup-width"
+              type="number"
+              min="0.1"
+              step="any" /></label
+          ><label
+            >Height<input id="setup-height" type="number" min="0.1" step="any"
+          /></label>
+        </div>
+        <label id="setup-duration-label"
+          >Duration (seconds)<input
+            id="setup-duration"
+            type="number"
+            min="2"
+            max="30"
+            step="0.0333333333"
+        /></label>
+        <p>
+          Unit changes convert artwork without changing its physical size (96 px
+          per inch). Resizing the canvas leaves objects in place. Switching type
+          keeps artwork and existing animation timing.
+        </p>
+        <p id="setup-error" role="alert"></p>
+        <div class="studio-actions">
+          <button id="setup-cancel">Cancel</button
+          ><button id="setup-apply" class="primary">Apply</button>
+        </div>
+      </dialog>
+      <dialog id="delete-dialog">
+        <h2>Delete design?</h2>
+        <p id="delete-description"></p>
+        <p>
+          Unsaved edits will be discarded. You can undo the deletion from
+          Studio.
+        </p>
+        <div class="studio-actions">
+          <button id="delete-cancel">Keep design</button
+          ><button id="delete-confirm" class="danger">Delete design</button>
+        </div>
+      </dialog>
+      <dialog id="regenerate-dialog">
+        <h2>Start again from the template?</h2>
+        <p>
+          This replaces the entire design using current event data. Text edits,
+          uploaded originals, custom additions, positioning, background changes
+          and timing will be replaced.
+        </p>
+        <p>
+          Review the fresh template next. Nothing changes until you apply it;
+          Undo can restore your current design.
+        </p>
+        <div class="studio-actions">
+          <button id="regenerate-cancel">Keep editing</button
+          ><button id="regenerate-continue" class="primary">Continue…</button>
+        </div>
+      </dialog>
+      <dialog id="generate-dialog" class="studio-fields">
+        <h2 id="generate-title">Set up design</h2>
+        <p id="generate-description">
+          Choose the sponsors to include. Sizes and spacing are automatic.
+        </p>
+        <div class="studio-generation">
+          <div class="studio-generation-artwork">
+            <div
+              id="generate-preview"
+              aria-label="Sponsor layout preview"
+            ></div>
+            <p id="generate-status" role="status"></p>
+          </div>
+          <div class="studio-generation-options">
+            <div id="generate-options"></div>
+          </div>
+        </div>
+        <p>
+          <span id="generate-notice"
+            >Your design starts from this template. You can edit it after
+            applying.</span
+          >
+        </p>
+        <div class="studio-actions">
+          <button id="generate-cancel">Cancel</button
+          ><button id="generate-apply" class="primary">Apply layout</button>
+        </div>
+      </dialog>
+      <dialog id="switch-dialog">
+        <h2>Save before leaving?</h2>
+        <p>You have unsaved changes in this design.</p>
+        <div class="studio-actions">
+          <button id="switch-cancel">Keep editing</button
+          ><button id="switch-discard">Discard & leave</button
+          ><button id="switch-save" class="primary">Save & leave</button>
+        </div>
+      </dialog>
+    </main>
+    <script>
+      window.studioBoot={{ .Boot }};
+    </script>
+    <script src="/{{ .Conf.Tag }}/admin/studio/scene.js" defer></script>
+    <script src="/static/js/studio-editor.js?v=29" defer></script>
+  </body>
+</html>
