@@ -290,13 +290,15 @@ func (w *judgingAccessResponse) WriteHeader(int)             {}
 func (w *judgingAccessResponse) Write(p []byte) (int, error) { return len(p), nil }
 
 // SessionMiddleware preserves the existing buffered session behavior for normal
-// requests. SSE needs a read-only session and the original streaming writer:
+// requests. SSE and Studio downloads need a read-only session and the original writer:
 // scs v2.5 buffers the complete response in LoadAndSave and hides Flush.
 func SessionMiddleware(app *config.AppContext, next http.Handler) http.Handler {
 	normal := app.Session.LoadAndSave(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-		if r.Method != http.MethodGet || len(parts) != 5 || parts[1] != "hackathon" || parts[2] != "judging" || parts[3] != "results" || parts[4] != "live" {
+		judgingStream := r.Method == http.MethodGet && len(parts) == 5 && parts[1] == "hackathon" && parts[2] == "judging" && parts[3] == "results" && parts[4] == "live"
+		studioDownload := r.Method == http.MethodPost && len(parts) == 6 && parts[1] == "admin" && parts[2] == "studio" && parts[3] == "designs" && parts[5] == "export"
+		if !judgingStream && !studioDownload {
 			normal.ServeHTTP(w, r)
 			return
 		}
