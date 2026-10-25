@@ -75,7 +75,22 @@
       continue;
     }
     try {
-      const scene = StudioScene.mount(thumb, record.document);
+      const d = record.document,
+        row = d.dataset?.rows.find(
+          (r) => !(d.dataset.excluded || []).includes(r.id),
+        );
+      const scene = StudioScene.mount(
+        thumb,
+        d,
+        {},
+        row
+          ? {
+              source: d.dataset.overrides?.[row.id] || row.source,
+              number: "01",
+              values: { name: row?.name, ...row?.values },
+            }
+          : {},
+      );
       scene
         .ready()
         .then((errors) => {

@@ -31,11 +31,22 @@ type Timing struct {
 	Rise  float64 `json:"rise"`
 }
 type Binding struct {
+	Row     string `json:"row,omitempty"`
+	Column  string `json:"column,omitempty"`
 	Field   string `json:"field,omitempty"`
 	Sponsor string `json:"sponsor,omitempty"`
 	Tier    string `json:"tier,omitempty"`
 }
+type Shadow struct {
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Blur    float64 `json:"blur"`
+	Color   string  `json:"color"`
+	Opacity float64 `json:"opacity"`
+}
 type Node struct {
+	Shadow     *Shadow  `json:"shadow,omitempty"`
+	TextAlign  string   `json:"textAlign,omitempty"`
 	ID         string   `json:"id"`
 	Kind       string   `json:"kind"`
 	Name       string   `json:"name"`
@@ -78,6 +89,7 @@ type Generation struct {
 	BannerReference bool    `json:"bannerReference,omitempty"`
 }
 type Document struct {
+	Dataset       *Dataset                 `json:"dataset,omitempty"`
 	ArtworkBounds map[string]ArtworkBounds `json:"artworkBounds,omitempty"`
 	Generation    *Generation              `json:"generation,omitempty"`
 
@@ -130,8 +142,16 @@ func color(s string) bool {
 func finite(v, lo, hi float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= lo && v <= hi }
 func (d Document) Validate() error {
 	bad := func() error { return fmt.Errorf("invalid Studio document") }
-	if d.Version != 1 || (d.Template != "banner" && d.Template != "overlay" && d.Template != "reel") {
+	if d.Version != 1 || (d.Template != "banner" && d.Template != "overlay" && d.Template != "reel" && d.Template != "canvas") {
 		return bad()
+	}
+	if d.Dataset != nil {
+		if err := d.Dataset.Validate(); err != nil {
+			return err
+		}
+		if d.Type() != "graphic" {
+			return fmt.Errorf("variable data is only supported for graphics")
+		}
 	}
 	if d.Template == "overlay" && d.Kind == "" && (d.Background.Color != "transparent" || d.Background.Asset != "" || d.Background.Darkness != 0) {
 		return fmt.Errorf("overlay backgrounds are preview-only until explicitly changed in Document setup")
@@ -202,12 +222,27 @@ func (d Document) Validate() error {
 			if !finite(n.X, -10000, 10000) || !finite(n.Y, -10000, 10000) || !finite(n.Width, 0, 10000) || !finite(n.Height, 0, 10000) || !finite(n.Scale, .001, 100) || !finite(n.Rotation, -360, 360) || !finite(n.Opacity, 0, 1) || !finite(n.Greyscale, 0, 1) || !finite(n.Brightness, 0, 2) {
 				return bad()
 			}
+			if n.Shadow != nil {
+				shadow := n.Shadow
+				units := 1.
+				if d.Page.Unit == "mm" {
+					units = 96 / 25.4
+				} else if d.Page.Unit == "in" {
+					units = 96
+				}
+				if n.Kind == "group" || !finite(shadow.X*units, -200, 200) || !finite(shadow.Y*units, -200, 200) || !finite(shadow.Blur*units, 0, 50) || !finite(shadow.Opacity, 0, 1) || !color(shadow.Color) {
+					return fmt.Errorf("invalid drop shadow")
+				}
+			}
 			switch n.Kind {
 			case "image":
 				if n.Width <= 0 || n.Height <= 0 || d.Assets[n.Asset] == "" {
 					return fmt.Errorf("%s needs artwork", n.Name)
 				}
 			case "text":
+				if n.TextAlign != "" && n.TextAlign != "left" && n.TextAlign != "center" && n.TextAlign != "right" {
+					return fmt.Errorf("invalid text alignment")
+				}
 				if _, ok := Fonts[n.Font]; !ok {
 					return fmt.Errorf("choose a bundled font")
 				}
@@ -227,8 +262,25 @@ func (d Document) Validate() error {
 			if n.Kind != "group" && len(n.Children) > 0 {
 				return bad()
 			}
-			if n.Binding != nil && (len(n.Binding.Field) > 80 || len(n.Binding.Sponsor) > 100 || len(n.Binding.Tier) > 120) {
+			if n.Binding != nil && (len(n.Binding.Field) > 80 || len(n.Binding.Sponsor) > 100 || len(n.Binding.Tier) > 120 || len(n.Binding.Column) > 80) {
 				return bad()
+			}
+			if n.Binding != nil && n.Binding.Row != "" {
+				if n.Binding.Row == "field" && d.Dataset != nil {
+					fields := d.Dataset.Fields()
+					found := false
+					for _, field := range fields {
+						if field == n.Binding.Column {
+							found = true
+						}
+					}
+					if !found {
+						return fmt.Errorf("variable field %q is unavailable", n.Binding.Column)
+					}
+				}
+				if d.Type() != "graphic" || (n.Binding.Row != "artwork" && n.Binding.Row != "number" && n.Binding.Row != "field") || (n.Binding.Row == "artwork" && n.Kind != "image") || (n.Binding.Row != "artwork" && n.Kind != "text") || (n.Binding.Row == "field" && (n.Binding.Column == "" || len(n.Binding.Column) > 80)) {
+					return fmt.Errorf("invalid recipient binding")
+				}
 			}
 			if n.Animation != nil {
 				a := n.Animation
@@ -260,7 +312,7 @@ func (d Document) Type() string {
 	if d.Kind != "" {
 		return d.Kind
 	}
-	return map[string]string{"banner": "graphic", "overlay": "graphic", "reel": "video"}[d.Template]
+	return map[string]string{"banner": "graphic", "overlay": "graphic", "reel": "video", "canvas": "graphic"}[d.Template]
 }
 func (d Document) PixelSize() (float64, float64) {
 	f := 1.0

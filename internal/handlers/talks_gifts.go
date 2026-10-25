@@ -19,73 +19,62 @@ func giftTalkEligible(talk *types.Talk) bool {
 	}
 }
 
-func speakerGiftRows(talks []*types.Talk, staff []*types.Speaker) []*GiftRow {
-	// Prefer available artwork, then the smallest-panel talk per speaker. Key on Speaker.ID
-	// when available, fall back to lower-cased name (older rows
-	// may lack stable IDs).
-	type pick struct {
-		name    string
-		clipart string
-		panelN  int
+type giftSelection struct {
+	ID, Name, Clipart, TalkID string
+	PanelN                    int
+}
+
+func giftSelections(talks []*types.Talk, staff []*types.Speaker) []giftSelection {
+	best := map[string]giftSelection{}
+	key := func(sp *types.Speaker) string {
+		if sp.ID != "" {
+			return sp.ID
+		}
+		return "name:" + strings.ToLower(strings.TrimSpace(sp.Name))
 	}
-	best := map[string]*pick{}
 	for _, talk := range talks {
 		if !giftTalkEligible(talk) {
 			continue
 		}
-		n := len(talk.Speakers)
 		for _, sp := range talk.Speakers {
 			if sp == nil {
 				continue
 			}
-			key := sp.ID
-			if key == "" {
-				key = "name:" + strings.ToLower(strings.TrimSpace(sp.Name))
-			}
-			prev, ok := best[key]
-			if !ok {
-				best[key] = &pick{name: sp.Name, clipart: talk.Clipart, panelN: n}
-				continue
-			}
-			// Never replace usable panel artwork with an empty solo-talk image.
+			id := key(sp)
+			prev, ok := best[id]
 			hasArt := strings.TrimSpace(talk.Clipart) != ""
-			prevHasArt := strings.TrimSpace(prev.clipart) != ""
-			if (hasArt && !prevHasArt) || (hasArt == prevHasArt && n < prev.panelN) {
-				prev.clipart = talk.Clipart
-				prev.panelN = n
-				prev.name = sp.Name
+			prevArt := strings.TrimSpace(prev.Clipart) != ""
+			if !ok || (hasArt && !prevArt) || (hasArt == prevArt && (len(talk.Speakers) < prev.PanelN || (len(talk.Speakers) == prev.PanelN && talk.ID < prev.TalkID))) {
+				best[id] = giftSelection{id, sp.Name, talk.Clipart, talk.ID, len(talk.Speakers)}
 			}
 		}
 	}
-
-	rows := make([]*GiftRow, 0, len(best))
-	for _, p := range best {
-		rows = append(rows, &GiftRow{Clipart: p.clipart, SpeakerName: p.name})
-	}
-
-	// {conf}-staff Speakers row too — leading.png as their
-	// clipart, skipped if they're already on a talk.
 	for _, sp := range staff {
 		if sp == nil {
 			continue
 		}
-		key := sp.ID
-		if key == "" {
-			key = "name:" + strings.ToLower(strings.TrimSpace(sp.Name))
+		id := key(sp)
+		if _, ok := best[id]; !ok {
+			best[id] = giftSelection{ID: id, Name: sp.Name, Clipart: "leading.png"}
 		}
-		if _, ok := best[key]; ok {
-			continue
-		}
-		best[key] = &pick{} // mark to dedupe across staff list itself
-		rows = append(rows, &GiftRow{
-			Clipart:     "leading.png",
-			SpeakerName: sp.Name,
-		})
 	}
-
-	sort.SliceStable(rows, func(i, j int) bool {
-		return strings.ToLower(rows[i].SpeakerName) < strings.ToLower(rows[j].SpeakerName)
+	rows := make([]giftSelection, 0, len(best))
+	for _, r := range best {
+		rows = append(rows, r)
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		a, b := strings.ToLower(rows[i].Name), strings.ToLower(rows[j].Name)
+		if a == b {
+			return rows[i].ID < rows[j].ID
+		}
+		return a < b
 	})
-
+	return rows
+}
+func speakerGiftRows(talks []*types.Talk, staff []*types.Speaker) []*GiftRow {
+	rows := []*GiftRow{}
+	for _, r := range giftSelections(talks, staff) {
+		rows = append(rows, &GiftRow{Clipart: r.Clipart, SpeakerName: r.Name})
+	}
 	return rows
 }

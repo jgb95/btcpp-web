@@ -941,7 +941,7 @@ func Routes(app *config.AppContext) (http.Handler, error) {
 	r.HandleFunc("/{conf}/admin/studio/designs", func(w http.ResponseWriter, r *http.Request) { StudioDesign(w, r, app) }).Methods("POST")
 	r.HandleFunc("/{conf}/admin/studio/{action:scene[.]js}", func(w http.ResponseWriter, r *http.Request) { StudioDesign(w, r, app) }).Methods("GET")
 	r.HandleFunc("/{conf}/admin/studio/designs/{id}", func(w http.ResponseWriter, r *http.Request) { StudioDesign(w, r, app) }).Methods("GET", "POST")
-	r.HandleFunc("/{conf}/admin/studio/designs/{id}/{action:export|duplicate|refresh|prepare-layout|delete|restore}", func(w http.ResponseWriter, r *http.Request) { StudioDesign(w, r, app) }).Methods("POST")
+	r.HandleFunc("/{conf}/admin/studio/designs/{id}/{action:export|duplicate|refresh|prepare-layout|delete|restore|recipient-data|recipient-preview}", func(w http.ResponseWriter, r *http.Request) { StudioDesign(w, r, app) }).Methods("POST")
 	metrics := appmetrics.New("btcpp_web", func() ([]types.BusinessMetricCount, error) {
 		return getters.ListBusinessMetricCounts(app)
 	})

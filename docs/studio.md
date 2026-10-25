@@ -43,6 +43,17 @@ if needed. Allow six minutes at the proxy for the five-minute render timeout.
 Artwork uploads are limited to 10 MB and documents to 32 MB. Fonts are bundled;
 font uploads are not supported.
 
+**Document setup → Variable data** adds CSV rows or event gift
+recipients to any Graphic document. Bind objects through **Variable field** in
+Properties. **Canvas gifts** uses this shared workflow for numbered PDF packages.
+See [Variable data](studio-variable-data.md).
+
+Text and images have an optional **Drop shadow** section in Properties, with
+color, opacity, blur and horizontal/vertical offsets. Shadows follow visible
+artwork (including transparent PNGs and SVGs), scale with the object, and leave
+selection bounds unchanged. Soft shadows are raster effects in PDFs; the
+unfiltered original SVG artwork and text remain vector-based.
+
 ## Checks
 
 ```sh

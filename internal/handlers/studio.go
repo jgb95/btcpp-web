@@ -100,14 +100,22 @@ func StudioDesign(w http.ResponseWriter, r *http.Request, app *config.AppContext
 	}
 	if r.Method == http.MethodPost {
 		var in struct {
-			Name     string           `json:"name"`
-			Template string           `json:"template"`
-			Document *studio.Document `json:"document"`
-			Revision int              `json:"revision"`
-			Format   string           `json:"format"`
+			Name        string           `json:"name"`
+			Template    string           `json:"template"`
+			Document    *studio.Document `json:"document"`
+			Revision    int              `json:"revision"`
+			RecipientID string           `json:"recipientId"`
+			CSV         string           `json:"csv"`
+			Source      string           `json:"source"`
+			NameColumn  string           `json:"nameColumn"`
+			ImageColumn string           `json:"imageColumn"`
+			Format      string           `json:"format"`
 		}
 		if !studioRead(w, r, &in) {
 			return
+		}
+		if in.Document != nil && in.Document.Dataset != nil {
+			in.Document.Dataset.Acknowledged = nil
 		}
 		if in.Revision < 0 {
 			http.Error(w, "Invalid revision", 400)
@@ -122,13 +130,16 @@ func StudioDesign(w http.ResponseWriter, r *http.Request, app *config.AppContext
 			name := strings.TrimSpace(in.Name)
 			if name == "" {
 				name = "Sponsor " + in.Template
+				if in.Template == "canvas" {
+					name = "Canvas gifts"
+				}
 			}
 			if len(name) > 160 {
 				http.Error(w, "Name is too long", 400)
 				return
 			}
 			// New designs open template setup before their first explicit save.
-			d.NeedsArrange = true
+			d.NeedsArrange = in.Template != "canvas"
 			raw, _ := json.Marshal(d)
 			var newID string
 			e = app.DB.QueryRow(r.Context(), `INSERT INTO studio_documents(conference_id,name,template,document) VALUES($1,$2,$3,$4) RETURNING id`, conf.Ref, name, d.Template, raw).Scan(&newID)
@@ -168,6 +179,56 @@ func StudioDesign(w http.ResponseWriter, r *http.Request, app *config.AppContext
 				return
 			}
 			studioJSON(w, map[string]any{"revision": revision, "url": "/" + conf.Tag + "/admin/studio"})
+			return
+		}
+		if action == "recipient-data" || action == "recipient-preview" {
+			if rec.Document.Type() != "graphic" {
+				http.Error(w, "Variable data is only available for graphics", 400)
+				return
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+			defer cancel()
+			if action == "recipient-data" {
+				var data *studio.Dataset
+				var err error
+				if in.Source == "csv" {
+					data, err = studio.PrepareCSV(ctx, in.CSV, in.NameColumn, in.ImageColumn)
+				} else if in.Source == "" || in.Source == "event_gifts" {
+					data, _, err = studioCanvasData(ctx, app, conf)
+				} else {
+					err = fmt.Errorf("unknown data source")
+				}
+				if err != nil {
+					http.Error(w, "Load recipients: "+err.Error(), 400)
+					return
+				}
+				studioJSON(w, data)
+				return
+			}
+			if in.Document == nil || in.Document.Template != rec.Document.Template || in.Document.Dataset == nil {
+				http.Error(w, "Missing recipient data", 400)
+				return
+			}
+			if err := in.Document.Validate(); err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+			for _, row := range in.Document.Dataset.Rows {
+				if row.ID == in.RecipientID {
+					a, err := studio.InspectArtwork(ctx, in.Document.Dataset.Artwork(row))
+					if err != nil {
+						http.Error(w, "Artwork: "+err.Error(), 400)
+						return
+					}
+					if in.Document.Dataset.Overrides[row.ID] == "" && a.Hash != row.Hash {
+						http.Error(w, "Artwork changed. Review Refresh recipients before previewing it.", 409)
+						return
+					}
+					studioJSON(w, map[string]any{"source": a.Source, "hash": a.Hash, "width": a.Width, "height": a.Height})
+					return
+				}
+			}
+			http.Error(w, "Recipient not found", 404)
 			return
 		}
 		if action == "prepare-layout" {
@@ -226,7 +287,42 @@ func StudioDesign(w http.ResponseWriter, r *http.Request, app *config.AppContext
 				return
 			}
 			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(6 * time.Minute))
-			path, mime, ext, e := studio.RenderWithOptions(r.Context(), rec.Document, options)
+			var path, mime, ext string
+			if rec.Document.Dataset != nil {
+				ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+				defer cancel()
+				var assets map[string]studio.Artwork
+				var err error
+				if rec.Document.Dataset.Source != "csv" {
+					var current *studio.Dataset
+					current, assets, err = studioCanvasData(ctx, app, conf)
+					if err == nil && current.Fingerprint != rec.Document.Dataset.Fingerprint {
+						http.Error(w, "Event data changed. Review Refresh data before exporting.", 409)
+						return
+					}
+				} else {
+					rows := append([]studio.Recipient(nil), rec.Document.Dataset.Rows...)
+					assets, err = studio.MeasureRows(ctx, rows, rec.Document.UsesVariableArtwork())
+					for i, row := range rows {
+						if rec.Document.UsesVariableArtwork() && rec.Document.Dataset.Overrides[row.ID] == "" && row.Hash != rec.Document.Dataset.Rows[i].Hash {
+							http.Error(w, "CSV artwork changed. Reimport the CSV to review it.", 409)
+							return
+						}
+					}
+				}
+				if err != nil {
+					http.Error(w, "Load recipients: "+err.Error(), 400)
+					return
+				}
+				path, e = studio.RenderDataset(ctx, rec.Document, assets, conf.Tag, rec.ID, rec.Revision, in.RecipientID, in.Format)
+				mime = map[string]string{"pdf": "application/pdf", "png": "image/png", "zip": "application/zip", "reference": "application/pdf"}[in.Format]
+				ext = "." + in.Format
+				if in.Format == "reference" {
+					ext = ".pdf"
+				}
+			} else {
+				path, mime, ext, e = studio.RenderWithOptions(r.Context(), rec.Document, options)
+			}
 			if e != nil {
 				app.Err.Printf("studio export: %v", e)
 				http.Error(w, "Export failed: "+e.Error(), 500)
@@ -234,7 +330,20 @@ func StudioDesign(w http.ResponseWriter, r *http.Request, app *config.AppContext
 			}
 			defer os.Remove(path)
 			w.Header().Set("Content-Type", mime)
-			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", conf.Tag+"-"+rec.Document.Template+ext))
+			filename := conf.Tag + "-" + rec.Document.Template + ext
+			if in.Format == "reference" {
+				filename = conf.Tag + "-artwork-manifest.pdf"
+			}
+			if rec.Document.Dataset != nil && (in.Format == "pdf" || in.Format == "png") {
+				rows := rec.Document.Dataset.Included()
+				for i, row := range rows {
+					if row.ID == in.RecipientID {
+						filename = strings.TrimSuffix(studio.RecipientFilename(studio.RecipientNumber(i, len(rows)), row.Name), ".pdf") + ext
+						break
+					}
+				}
+			}
+			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 			http.ServeFile(w, r, path)
 			return
 		}
@@ -250,6 +359,16 @@ func StudioDesign(w http.ResponseWriter, r *http.Request, app *config.AppContext
 		if in.Name == "" || len(in.Name) > 160 {
 			http.Error(w, "Name must be 1–160 characters", 400)
 			return
+		}
+		if in.Document.Dataset != nil {
+			for id, source := range in.Document.Dataset.Overrides {
+				original, err := studio.LoadArtwork(r.Context(), source)
+				if err != nil {
+					http.Error(w, "Override artwork: "+err.Error(), 400)
+					return
+				}
+				in.Document.Dataset.Overrides[id] = original
+			}
 		}
 		if e = studio.Freeze(r.Context(), in.Document); e != nil {
 			http.Error(w, "Unable to preserve artwork: "+e.Error(), 400)

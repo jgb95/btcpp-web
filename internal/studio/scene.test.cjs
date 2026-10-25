@@ -578,3 +578,21 @@ test("background stays covered for tall/wide images, extreme pan, zoom and legac
             assert.ok(box.y + box.height >= 100 + bleed - epsilon);
           }
 });
+
+test("variable text uses row values without modifying the saved object", () => {
+  const n={text:"Shared",binding:{row:"field",column:"Message"}};
+  assert.equal(S.textValue(n,{values:{Message:"Hello Seoul"}}),"Hello Seoul");
+  assert.equal(S.textValue(n,{values:{Message:""}}),"");
+  assert.equal(n.text,"Shared");
+  assert.equal(S.textValue({text:"01",binding:{row:"number"}},{number:"07"}),"07");
+});
+
+test("document unit conversion preserves physical shadow distances and history", () => {
+  const d={version:1,template:"banner",page:{width:100,height:200,unit:"mm",bleed:0},background:{},nodes:[{id:"text",kind:"text",x:2,y:3,fontSize:4,shadow:{x:1,y:2,blur:3,color:"#000000",opacity:.4}}]};
+  const n=S.configure(d,{width:100*96/25.4,height:200*96/25.4,unit:"px",bleed:0},"graphic",0);
+  assert.equal(n.nodes[0].shadow.blur,3*96/25.4);
+  assert.equal(d.nodes[0].shadow.blur,3);
+  const history=S.history(d);history.push(n);
+  assert.equal(history.undo().nodes[0].shadow.x,1);
+  assert.equal(history.redo().nodes[0].shadow.x,96/25.4);
+});

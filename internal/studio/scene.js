@@ -257,7 +257,7 @@
     });
   }
   function layoutWarnings(d) {
-    if (d.template === "overlay") return [];
+    if (d.template === "overlay" || d.template === "canvas") return [];
     const crowded = [];
     const minimum =
       (d.template === "banner" ? (14 * 96) / 25.4 : 64) /
@@ -341,7 +341,7 @@
     }
     const logosFor = (g) => lists.get(g).map((e) => e.copy);
     let groups = [...lists.keys()].filter((g) => lists.get(g).length);
-    if (d.template === "overlay") {
+    if (d.template === "overlay" || d.template === "canvas") {
       d.needsArrange = false;
       return;
     }
@@ -540,7 +540,7 @@
     return n;
   };
   let sceneSerial = 0;
-  function mount(host, d, fontURLs = {}) {
+  function mount(host, d, fontURLs = {}, recipient = {}) {
     const effectPrefix = `effect-${++sceneSerial}-`;
     const svg = element("svg", {
       xmlns: "http://www.w3.org/2000/svg",
@@ -553,6 +553,11 @@
       nodes = new Map(),
       loadedSources = new Map();
     let missing = [];
+    const sourceFor = (id) =>
+      recipient.source &&
+      all(d).some((n) => n.asset === id && n.binding?.row === "artwork")
+        ? recipient.source
+        : d.assets[id];
     const fontFiles = {
       BannerMono: "CourierPrime-Regular.ttf",
       BannerBrand: "Ubuntu-BoldItalic.ttf",
@@ -603,7 +608,7 @@
       );
       await Promise.all(
         [...used].map(async (id) => {
-          if (images.has(id) && loadedSources.get(id) === d.assets[id]) return;
+          if (images.has(id) && loadedSources.get(id) === sourceFor(id)) return;
           try {
             const img = new Image();
             await new Promise((resolve, reject) => {
@@ -616,11 +621,11 @@
                 clearTimeout(timer);
                 reject(Error("Unavailable"));
               };
-              img.src = d.assets[id];
+              img.src = sourceFor(id);
             });
             if (!img.naturalWidth) throw Error();
             images.set(id, img);
-            loadedSources.set(id, d.assets[id]);
+            loadedSources.set(id, sourceFor(id));
           } catch (e) {
             missing.push(
               all(d).find((n) => n.asset === id)?.name || "Background",
@@ -730,54 +735,62 @@
         const g = element("g", { "data-node": n.id });
         nodes.set(n.id, g);
         parent.append(g);
+        const visual = n.kind === "group" ? g : element("g");
         if (n.kind === "group") {
           for (const child of n.children || []) add(child, g);
-        } else if (n.kind === "image") {
-          const b = d.artworkBounds?.[n.asset],
-            img = images.get(n.asset);
-          if (b && img) {
-            const crop = element("svg", {
-              width: n.width,
-              height: n.height,
-              viewBox: `${b.x * img.naturalWidth} ${b.y * img.naturalHeight} ${b.width * img.naturalWidth} ${b.height * img.naturalHeight}`,
-              preserveAspectRatio: (n.fit || "xMidYMid") + " meet",
-              overflow: "hidden",
-            });
-            crop.append(
-              element("image", {
-                width: img.naturalWidth,
-                height: img.naturalHeight,
-                href: d.assets[n.asset],
-              }),
-            );
-            g.append(crop);
-          } else
-            g.append(
-              element("image", {
+        } else {
+          g.append(visual);
+          if (n.kind === "image") {
+            const b = d.artworkBounds?.[n.asset],
+              img = images.get(n.asset);
+            if (b && img) {
+              const crop = element("svg", {
                 width: n.width,
                 height: n.height,
-                href: d.assets[n.asset],
+                viewBox: `${b.x * img.naturalWidth} ${b.y * img.naturalHeight} ${b.width * img.naturalWidth} ${b.height * img.naturalHeight}`,
                 preserveAspectRatio: (n.fit || "xMidYMid") + " meet",
-              }),
-            );
-        } else {
-          const t = element("text", {
-            "font-family": n.font,
-            "font-size": n.fontSize,
-            fill: n.color,
-            "xml:space": "preserve",
-            style: "white-space:pre",
-          });
-          (n.text || "").split("\n").forEach((line, i) => {
-            t.append(
-              element("tspan", { x: 0, y: i * n.fontSize * 1.18 }, line),
-            );
-          });
-          g.append(t);
+                overflow: "hidden",
+              });
+              crop.append(
+                element("image", {
+                  width: img.naturalWidth,
+                  height: img.naturalHeight,
+                  href: sourceFor(n.asset),
+                }),
+              );
+              visual.append(crop);
+            } else
+              visual.append(
+                element("image", {
+                  width: n.width,
+                  height: n.height,
+                  href: sourceFor(n.asset),
+                  preserveAspectRatio: (n.fit || "xMidYMid") + " meet",
+                }),
+              );
+          } else {
+            const t = element("text", {
+              "font-family": n.font,
+              "font-size": n.fontSize,
+              "text-anchor":
+                { right: "end", center: "middle" }[n.textAlign] || "start",
+              fill: n.color,
+              "xml:space": "preserve",
+              style: "white-space:pre",
+            });
+            textValue(n, recipient)
+              .split("\n")
+              .forEach((line, i) => {
+                t.append(
+                  element("tspan", { x: 0, y: i * n.fontSize * 1.18 }, line),
+                );
+              });
+            visual.append(t);
+          }
         }
         if (n.greyscale || n.brightness !== 1 || n.white) {
           const filterID = effectPrefix + n.id,
-            bounds = g.getBBox();
+            bounds = visual.getBBox();
           const filter = element("filter", {
             id: filterID,
             filterUnits: "userSpaceOnUse",
@@ -810,7 +823,51 @@
             );
           filter.append(transfer);
           defs.append(filter);
-          g.setAttribute("filter", `url(#${filterID})`);
+          visual.setAttribute("filter", `url(#${filterID})`);
+        }
+        if (n.shadow && n.shadow.opacity > 0) {
+          const shadow = n.shadow,
+            bounds = visual.getBBox(),
+            pad =
+              3 * shadow.blur +
+              Math.max(Math.abs(shadow.x), Math.abs(shadow.y)) +
+              1;
+          const artID = effectPrefix + "art-" + nodes.size,
+            filterID = effectPrefix + "shadow-" + nodes.size;
+          visual.id = artID;
+          const filter = element("filter", {
+            id: filterID,
+            filterUnits: "userSpaceOnUse",
+            x: bounds.x - pad,
+            y: bounds.y - pad,
+            width: bounds.width + 2 * pad,
+            height: bounds.height + 2 * pad,
+            "color-interpolation-filters": "sRGB",
+          });
+          filter.append(
+            element("feGaussianBlur", {
+              in: "SourceAlpha",
+              stdDeviation: shadow.blur,
+            }),
+            element("feOffset", {
+              dx: shadow.x,
+              dy: shadow.y,
+              result: "alpha",
+            }),
+            element("feFlood", {
+              "flood-color": shadow.color,
+              "flood-opacity": shadow.opacity,
+            }),
+            element("feComposite", { in2: "alpha", operator: "in" }),
+          );
+          defs.append(filter);
+          g.insertBefore(
+            element("use", {
+              href: "#" + artID,
+              filter: `url(#${filterID})`,
+            }),
+            visual,
+          );
         }
       }
       d.nodes.forEach((n) => add(n, svg));
@@ -878,6 +935,10 @@
       box,
       ratio,
       measureArtwork,
+      async setRecipient(value) {
+        recipient = value;
+        return ready();
+      },
       backgroundBox: () => {
         const img = images.get(d.background.asset);
         return backgroundBox(d, img ? img.naturalWidth / img.naturalHeight : 1);
@@ -892,7 +953,12 @@
     d.kind === "print"
       ? "graphic"
       : d.kind ||
-        { banner: "graphic", overlay: "graphic", reel: "video" }[d.template];
+        {
+          banner: "graphic",
+          overlay: "graphic",
+          reel: "video",
+          canvas: "graphic",
+        }[d.template];
   const unitFactor = (unit) => ({ px: 1, mm: 96 / 25.4, in: 96 })[unit];
   function configure(source, page, kind, duration) {
     const d = clone(source),
@@ -901,6 +967,7 @@
       for (const key of ["x", "y", "width", "height", "fontSize"])
         if (n[key] !== undefined) n[key] *= f;
       if (n.animation) n.animation.rise *= f;
+      if (n.shadow) for (const key of ["x", "y", "blur"]) n.shadow[key] *= f;
     });
     d.background.x = (d.background.x || 0) * f;
     d.background.y = (d.background.y || 0) * f;
@@ -928,7 +995,14 @@
       height: ih,
     };
   }
+  function textValue(n, row = {}) {
+    if (n.binding?.row === "number") return row.number ?? n.text ?? "";
+    if (n.binding?.row === "field")
+      return row.values?.[n.binding.column] ?? n.text ?? "";
+    return n.text || "";
+  }
   const api = {
+    textValue,
     clone,
     type,
     unitFactor,

@@ -252,6 +252,14 @@
   gap: 8px;
   padding: 10px 0;
 }
+#recipients-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#recipients-toggle svg {
+  flex: none;
+}
 .studio-transport input {
   flex: 1;
   min-width: 20px;
@@ -813,4 +821,86 @@
 }
 #file-menu {
   overflow: visible;
+}
+
+#studio-workspace.with-recipients {
+  grid-template-columns: 230px minmax(0, 1fr) 265px;
+}
+#recipients-drawer {
+  background: #f8f4ed;
+  border: 1px solid #d6cdbf;
+  padding: 14px;
+  max-height: calc(100vh - 340px);
+  overflow: auto;
+  min-width: 0;
+}
+#recipient-select {
+  flex: 0 1 330px;
+}
+#recipient-summary {
+  font-size: 12px;
+}
+#recipient-list {
+  margin: 12px 0;
+}
+.recipient-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 4px 0;
+}
+.studio .recipient-pick {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border-color: transparent;
+  background: transparent;
+  padding: 4px;
+  font-size: 11px;
+}
+.studio .recipient-pick[aria-pressed="true"] {
+  background: #e9d9c1;
+}
+.recipient-pick img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+#recipient-detail {
+  border-top: 1px solid #d6cdbf;
+  padding-top: 10px;
+}
+#recipient-detail button {
+  width: 100%;
+  margin-top: 7px;
+}
+#recipient-issue {
+  white-space: pre-line;
+}
+#recipient-changes {
+  max-height: 300px;
+  overflow: auto;
+}
+#recipient-changes p {
+  color: #302a22;
+}
+@media (max-width: 1050px) {
+  #studio-workspace.with-recipients {
+    grid-template-columns: minmax(0, 1fr) 240px;
+  }
+  #recipients-drawer {
+    grid-column: 1/-1;
+    max-height: 230px;
+  }
+}
+@media (max-width: 700px) {
+  #studio-workspace.with-recipients {
+    grid-template-columns: 1fr;
+  }
+  #canvas-toolbar {
+    flex-wrap: wrap;
+  }
 }

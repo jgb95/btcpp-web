@@ -4,20 +4,13 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strconv"
 	"time"
 
-	"github.com/chromedp/cdproto/cdp"
-	"github.com/chromedp/cdproto/emulation"
-	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
 
@@ -30,6 +23,13 @@ type ExportOptions struct {
 }
 
 func (o ExportOptions) Validate(d Document) error {
+	if d.Dataset != nil {
+		if d.Type() == "graphic" && (o.Format == "pdf" || o.Format == "png" || o.Format == "zip" || o.Format == "reference") {
+			return nil
+		}
+		return fmt.Errorf("variable graphics export as PDF, PNG, or a ZIP of PDFs")
+	}
+
 	if o.Format == "" {
 		o.Format = map[string]string{"graphic": "png", "video": "mp4"}[d.Type()]
 	}
@@ -51,6 +51,9 @@ func RenderWithOptions(parent context.Context, d Document, options ExportOptions
 	if options.Format == "" {
 		options.Format = map[string]string{"graphic": "png", "video": "mp4"}[d.Type()]
 	}
+	if options.Format == "zip" || options.Format == "reference" {
+		return "", "", "", fmt.Errorf("ZIP export requires a reviewed canvas batch")
+	}
 	if err := options.Validate(d); err != nil {
 		return "", "", "", err
 	}
@@ -60,67 +63,14 @@ func RenderWithOptions(parent context.Context, d Document, options ExportOptions
 	}
 	ctx, cancel := context.WithTimeout(parent, 5*time.Minute)
 	defer cancel()
-	if err := Freeze(ctx, &d); err != nil {
+	r := newRenderer(ctx)
+	defer r.Close()
+	if err := r.load(d); err != nil {
 		return "", "", "", err
 	}
-	fonts := map[string]string{}
-	var fontErr error
-	Walk(d.Nodes, func(n *Node) {
-		if n.Kind != "text" || fonts[n.Font] != "" {
-			return
-		}
-		b, e := os.ReadFile("static/fonts/" + Fonts[n.Font])
-		if e != nil {
-			fontErr = e
-			return
-		}
-		fonts[n.Font] = "data:font/otf;base64," + base64.StdEncoding.EncodeToString(b)
-	})
-	if fontErr != nil {
-		return "", "", "", fmt.Errorf("bundled font: %w", fontErr)
-	}
-	raw, _ := json.Marshal(d)
-	fontJSON, _ := json.Marshal(fonts)
+	browser := r.browser
 	width, height := d.PixelSize()
-	paperWidth, paperHeight := width*25.4/96, height*25.4/96
-	css := fmt.Sprintf("html,body{margin:0;padding:0;background:transparent}#scene>svg{display:block;width:%gpx;height:%gpx} @page{size:%gmm %gmm;margin:0} @media print{#scene>svg{width:%gmm;height:%gmm}}", width, height, paperWidth, paperHeight, paperWidth, paperHeight)
-	html := `<!doctype html><meta charset="utf-8"><style>` + css + `</style><div id="scene"></div><script>` + SceneJS + `</script><script>window.scene=StudioScene.mount(document.getElementById('scene'),` + string(raw) + `,` + string(fontJSON) + `);window.ready=scene.ready().then(errors=>{if(errors.length)throw Error(errors.join(', '));return true});</script>`
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:")
-		fmt.Fprint(w, html)
-	}))
-	defer server.Close()
-	opts := append([]chromedp.ExecAllocatorOption{}, chromedp.DefaultExecAllocatorOptions[:]...)
-	opts = append(opts, chromedp.DisableGPU)
-	if chrome := os.Getenv("CHROME_PATH"); chrome != "" {
-		opts = append(opts, chromedp.ExecPath(chrome))
-	}
-	alloc, stop := chromedp.NewExecAllocator(ctx, opts...)
-	defer stop()
-	browser, closeBrowser := chromedp.NewContext(alloc)
-	defer closeBrowser()
-	if err := chromedp.Do(browser,
-		chromedp.EmulateViewport(int64(math.Ceil(width)), int64(math.Ceil(height))),
-		chromedp.Func(func(c context.Context, target *chromedp.Target) error {
-			// The generated RGBA binding omits zero alpha, which Chrome interprets as opaque.
-			// Send alpha explicitly so transparent PNGs retain their background.
-			command := cdp.Command[map[string]any, cdp.Empty]{Method: emulation.CommandSetDefaultBackgroundColorOverride}
-			_, err := cdp.Call(c, target, command, map[string]any{"color": map[string]any{"r": 0, "g": 0, "b": 0, "a": 0}})
-			return err
-		}),
-		chromedp.Navigate(server.URL),
-	); err != nil {
-		return "", "", "", err
-	}
-	ready, err := chromedp.Run(browser, chromedp.Evaluate[bool]("window.ready", chromedp.EvalAwaitPromise))
-	if err != nil {
-		return "", "", "", err
-	}
 
-	if !ready {
-		return "", "", "", fmt.Errorf("artwork did not become ready")
-	}
 	ext = "." + options.Format
 	mime = map[string]string{"pdf": "application/pdf", "png": "image/png", "mp4": "video/mp4"}[options.Format]
 
@@ -138,13 +88,7 @@ func RenderWithOptions(parent context.Context, d Document, options ExportOptions
 	if options.Format != "mp4" {
 		var data []byte
 		if options.Format == "pdf" {
-			yes, zero := true, 0.0
-			result, e := chromedp.Call(browser, page.PrintToPDF, page.PrintToPDFParams{
-				PrintBackground: &yes, PreferCSSPageSize: &yes,
-				PaperWidth: paperWidth / 25.4, PaperHeight: paperHeight / 25.4,
-				MarginTop: &zero, MarginBottom: &zero, MarginLeft: &zero, MarginRight: &zero,
-			})
-			data, err = result.Data, e
+			data, err = r.pdf()
 		} else {
 			data, err = chromedp.Run(browser, chromedp.CaptureScreenshot())
 		}

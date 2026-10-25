@@ -27,6 +27,342 @@
     generationFocus = "",
     initialSetup = false,
     backgroundEditing = false;
+  const variable = () => S.type(d) === "graphic" && !!d.dataset;
+  let recipientID = "",
+    recipientValues = {},
+    pendingRecipients = null;
+  const recipientCache = new Map();
+  const includedRecipients = () =>
+    (d.dataset?.rows || []).filter(
+      (r) => !(d.dataset.excluded || []).includes(r.id),
+    );
+  const recipientSource = (r) => d.dataset?.overrides?.[r.id] || r.source;
+  function recipientNumber(id) {
+    const rows = includedRecipients(),
+      i = rows.findIndex((r) => r.id === id);
+    return i < 0
+      ? "—"
+      : String(i + 1).padStart(Math.max(2, String(rows.length).length), "0");
+  }
+  function rowWarning(row) {
+    if (row.issue?.startsWith("Artwork:")) return row.issue;
+    const key = row.name.trim().toLocaleLowerCase();
+    return includedRecipients().filter(
+      (r) => r.name.trim().toLocaleLowerCase() === key,
+    ).length > 1
+      ? "Same name appears more than once. Deselect any duplicate person."
+      : row.identityIssue
+        ? ""
+        : row.issue || "";
+  }
+  function recipientError(id = "") {
+    if (!d.dataset) return "Review variable data before exporting.";
+    const rows = includedRecipients().filter((r) => !id || r.id === id);
+    if (!rows.length) return "Select at least one recipient.";
+    for (const r of rows) {
+      if (
+        nodes().some((n) => n.binding?.row === "artwork") &&
+        (!recipientSource(r) ||
+          (r.issue?.startsWith("Artwork:") && !d.dataset.overrides?.[r.id]))
+      )
+        return r.name + " needs artwork.";
+    }
+    return "";
+  }
+  async function dataPreview() {
+    if (!variable()) return {};
+    const rows = d.dataset?.rows || [];
+    if (!rows.some((r) => r.id === recipientID))
+      recipientID = rows[0]?.id || "";
+    const row = rows.find((r) => r.id === recipientID);
+    if (!row) return {};
+    const source = recipientSource(row);
+    const key =
+      source +
+      "#" +
+      (d.dataset.overrides?.[row.id] ? "override" : row.hash || "");
+    let value = recipientCache.get(key);
+    if (source && nodes().some((n) => n.binding?.row === "artwork") && !value) {
+      try {
+        value = await (
+          await request("recipient-preview", {
+            document: d,
+            recipientId: recipientID,
+          })
+        ).json();
+        if (recipientCache.size >= 3) recipientCache.clear();
+        recipientCache.set(key, value);
+      } catch (e) {
+        error(e);
+        value = {};
+      }
+    }
+    recipientValues = {
+      ...value,
+      number: recipientNumber(recipientID),
+      values: { name: row.name, ...row.values },
+    };
+    return recipientValues;
+  }
+  function recipientPanel() {
+    const entering = $("canvas-toolbar").hidden && variable();
+    $("canvas-toolbar").hidden = !variable();
+    $("data-view-toggle").hidden = !variable();
+    if (!variable()) {
+      showData(false);
+      return;
+    }
+    if (entering) {
+      showData(true);
+    }
+    const rows = d.dataset?.rows || [],
+      included = includedRecipients();
+    $("recipient-summary").textContent =
+      included.length + " included · " + rows.length + " rows";
+    $("recipient-status").textContent = recipientError() || "Ready to export.";
+    $("recipient-select").replaceChildren(
+      ...rows.map((r) => {
+        const o = document.createElement("option");
+        o.value = r.id;
+        o.textContent = recipientNumber(r.id) + " · " + r.name;
+        return o;
+      }),
+    );
+    $("recipient-select").value = recipientID;
+    $("recipient-list").replaceChildren(
+      ...rows.map((r) => {
+        const line = document.createElement("div");
+        line.className = "recipient-row";
+        const check = document.createElement("input");
+        check.type = "checkbox";
+        check.checked = !(d.dataset.excluded || []).includes(r.id);
+        check.setAttribute("aria-label", "Include " + r.name);
+        check.disabled = busy;
+        check.onchange = () =>
+          run(async () => {
+            const ids = new Set(d.dataset.excluded || []);
+            check.checked ? ids.delete(r.id) : ids.add(r.id);
+            d.dataset.excluded = [...ids];
+            await scene.setRecipient(await dataPreview());
+            render();
+            recipientPanel();
+            commit();
+          });
+        const pick = document.createElement("button");
+        pick.className = "recipient-pick";
+        pick.setAttribute("aria-pressed", r.id === recipientID);
+        pick.disabled = busy;
+        const source = recipientSource(r);
+        if (source) {
+          const img = document.createElement("img");
+          img.src = source;
+          img.alt = "";
+          img.loading = "lazy";
+          pick.append(img);
+        }
+        const name = document.createElement("span");
+        name.textContent =
+          recipientNumber(r.id) + " · " + r.name + (rowWarning(r) ? " ⚠" : "");
+        pick.append(name);
+        pick.onclick = () => chooseRecipient(r.id);
+        line.append(check, pick);
+        return line;
+      }),
+    );
+    const row = rows.find((r) => r.id === recipientID);
+    $("recipient-detail").hidden = !row;
+    if (row) {
+      const notes = [];
+      const warning = rowWarning(row);
+      if (warning)
+        notes.push(
+          warning.startsWith("Artwork:") && d.dataset.overrides?.[row.id]
+            ? "Event artwork unavailable; using your replacement."
+            : warning,
+        );
+      if (d.dataset.overrides?.[row.id])
+        notes.push("Artwork override for this recipient.");
+      const w = recipientValues.width || row.width,
+        h = recipientValues.height || row.height,
+        n = nodes().find((n) => n.binding?.row === "artwork");
+      if (w && h && n) {
+        const inches = S.unitFactor(d.page.unit) / 96;
+        let scale = n.scale,
+          p = parent(n.id);
+        while (p) {
+          scale *= p.scale;
+          p = parent(p.id);
+        }
+        const ppi = Math.max(
+          w / (n.width * scale * inches),
+          h / (n.height * scale * inches),
+        );
+        notes.push(
+          Math.round(ppi) +
+            " ppi at print size" +
+            (ppi < 150 ? " — low resolution" : ""),
+        );
+      }
+      $("recipient-issue").textContent = notes.join("\n");
+      $("recipient-reset").hidden = !d.dataset.overrides?.[row.id];
+      $("recipient-replace").hidden = !nodes().some(
+        (n) => n.binding?.row === "artwork",
+      );
+    }
+  }
+  async function chooseRecipient(id) {
+    await run(async () => {
+      recipientID = id;
+      await scene.setRecipient(await dataPreview());
+      render();
+      recipientPanel();
+    });
+  }
+  async function refreshRecipients() {
+    if (d.dataset?.source === "csv") {
+      $("document-setup").click();
+      return;
+    }
+    const current = await (
+      await request("recipient-data", {
+        source: d.dataset?.source || "event_gifts",
+      })
+    ).json();
+    reviewData(current);
+  }
+  function reviewData(current) {
+    if (
+      d.dataset?.fingerprint === current.fingerprint &&
+      d.dataset.source === current.source &&
+      (!d.dataset.columns ||
+        JSON.stringify([
+          d.dataset.columns,
+          d.dataset.nameColumn,
+          d.dataset.imageColumn,
+        ]) ===
+          JSON.stringify([
+            current.columns,
+            current.nameColumn,
+            current.imageColumn,
+          ]))
+    ) {
+      recipientPanel();
+      return;
+    }
+    pendingRecipients = current;
+    const old = new Map((d.dataset?.rows || []).map((r) => [r.id, r]));
+    const changes = [];
+    for (const row of current.rows) {
+      const prev = old.get(row.id);
+      changes.push(
+        (!prev
+          ? "Added: "
+          : JSON.stringify(prev) !== JSON.stringify(row)
+            ? "Changed: "
+            : "Unchanged: ") + row.name,
+      );
+      old.delete(row.id);
+    }
+    for (const row of old.values()) changes.push("Removed: " + row.name);
+    $("recipient-changes").replaceChildren(
+      ...changes.map((t) => {
+        const p = document.createElement("p");
+        p.textContent = t;
+        return p;
+      }),
+    );
+    if (!changes.length)
+      $("recipient-changes").textContent = "No eligible event recipients yet.";
+    $("recipient-dialog").showModal();
+  }
+  $("recipient-refresh").onclick = () => run(refreshRecipients);
+  $("recipient-review-cancel").onclick = () => $("recipient-dialog").close();
+  $("recipient-review-apply").onclick = () =>
+    run(async () => {
+      const prior = d.dataset || {},
+        ids = new Set(pendingRecipients.rows.map((r) => r.id));
+      d.dataset = {
+        ...pendingRecipients,
+        excluded: (prior.excluded || []).filter((id) => ids.has(id)),
+        overrides: Object.fromEntries(
+          Object.entries(prior.overrides || {}).filter(([id]) => ids.has(id)),
+        ),
+      };
+      S.walk(d.nodes, (n) => {
+        if (
+          n.binding?.row === "artwork" &&
+          d.dataset.source === "csv" &&
+          !d.dataset.imageColumn
+        ) {
+          if (recipientValues.source)
+            d.assets[n.asset] = recipientValues.source;
+          delete n.binding.row;
+        }
+        if (
+          n.binding?.row === "field" &&
+          !dataFields().includes(n.binding.column)
+        ) {
+          n.text = S.textValue(n, recipientValues);
+          delete n.binding.row;
+          delete n.binding.column;
+        }
+      });
+      pendingRecipients = null;
+      showData(true);
+      $("recipient-dialog").close();
+      await scene.setRecipient(await dataPreview());
+      render();
+      recipientPanel();
+      commit();
+    });
+  $("recipient-select").onchange = () =>
+    chooseRecipient($("recipient-select").value);
+  for (const [id, step] of [
+    ["recipient-prev", -1],
+    ["recipient-next", 1],
+  ])
+    $(id).onclick = () => {
+      const rows = d.dataset?.rows || [],
+        i = rows.findIndex((r) => r.id === recipientID);
+      if (rows.length)
+        chooseRecipient(rows[(i + step + rows.length) % rows.length].id);
+    };
+  $("recipient-replace").onclick = () => {
+    const n = nodes().find((n) => n.binding?.row === "artwork");
+    if (n) {
+      select(n.id);
+      $("replace-image").click();
+    }
+  };
+  $("recipient-reset").onclick = () =>
+    run(async () => {
+      delete d.dataset.overrides[recipientID];
+      await scene.setRecipient(await dataPreview());
+      render();
+      recipientPanel();
+      commit();
+    });
+  function showData(show) {
+    show = !!show && variable();
+    $("recipients-drawer").hidden = !show;
+    $("studio-workspace").classList.toggle("with-recipients", show);
+    for (const id of ["recipients-toggle", "data-view-toggle"])
+      $(id).setAttribute("aria-expanded", show);
+    $("data-view-toggle").querySelector("[data-check]").textContent = show
+      ? "✓"
+      : "";
+    if (show) {
+      $("layers-drawer").hidden = true;
+      $("studio-workspace").classList.remove("with-layers");
+      $("layers-toggle").setAttribute("aria-expanded", false);
+      $("layers-toggle").querySelector("[data-check]").textContent = "";
+    }
+  }
+  $("recipients-toggle").onclick = () => {
+    showData($("recipients-drawer").hidden);
+    if (fitted) fit();
+  };
+
   const snapshot = () => ({ name, document: S.clone(d) });
   let saved = JSON.stringify(snapshot()),
     hist = S.history(snapshot());
@@ -104,11 +440,27 @@
     $("save").disabled = busy;
     $("export-menu-toggle").disabled =
       busy || !!scene?.missing.length || !!d.needsArrange;
+    $("batch-export-divider").hidden = !variable();
     document.querySelectorAll("[data-export]").forEach((button) => {
       const kind = S.type(d),
         format = button.dataset.export;
-      button.hidden = kind === "video" ? format !== "mp4" : format === "mp4";
-      button.disabled = $("export-menu-toggle").disabled;
+      if (format === "pdf")
+        button.textContent = variable() ? "Selected row PDF…" : "PDF…";
+      if (format === "png")
+        button.textContent = variable() ? "Selected row PNG…" : "PNG…";
+      if (format === "zip") button.textContent = "Batch PDFs ZIP…";
+      button.hidden = variable()
+        ? !["pdf", "png", "zip", "reference"].includes(format)
+        : kind === "video"
+          ? format !== "mp4"
+          : ["mp4", "zip", "reference"].includes(format);
+      button.disabled =
+        $("export-menu-toggle").disabled ||
+        (variable() &&
+          (format === "zip" || format === "reference"
+            ? !!recipientError()
+            : recipientNumber(recipientID) === "—" ||
+              !!recipientError(recipientID)));
     });
     $("undo").disabled = busy || !hist.canUndo;
     $("redo").disabled = busy || !hist.canRedo;
@@ -302,6 +654,74 @@
     }
     [...d.nodes].reverse().forEach((n) => row(n, 0));
   }
+  function dimension(n) {
+    return Number(n.toFixed(d.page.unit === "in" ? 3 : 1));
+  }
+  function dataFields(dataset = d.dataset) {
+    return dataset?.columns?.length
+      ? dataset.columns
+      : [
+          ...new Set([
+            "name",
+            ...(dataset?.rows || []).flatMap((row) =>
+              Object.keys(row.values || {}),
+            ),
+          ]),
+        ].sort();
+  }
+  function bindingOptions(n) {
+    const label = $("data-binding-label"),
+      select = $("data-binding");
+    label.hidden = !variable() || !n || !["text", "image"].includes(n.kind);
+    if (label.hidden) return;
+    const options = [["", "None (shared content)"]];
+    if (n.kind === "text")
+      options.push(
+        ["number", "Batch number"],
+        ...dataFields()
+          .filter((c) => c !== d.dataset.imageColumn)
+          .map((c) => ["field:" + c, c]),
+      );
+    else if (d.dataset.source !== "csv" || d.dataset.imageColumn)
+      options.push(["artwork", d.dataset.imageColumn || "Recipient artwork"]);
+    select.replaceChildren(
+      ...options.map(([value, text]) => {
+        const o = document.createElement("option");
+        o.value = value;
+        o.textContent = text;
+        return o;
+      }),
+    );
+    select.value =
+      n.binding?.row === "field"
+        ? "field:" + n.binding.column
+        : n.binding?.row || "";
+  }
+  $("data-binding").onchange = () =>
+    run(async () => {
+      const n = single();
+      if (!n || !editable(n)) return;
+      const value = $("data-binding").value;
+      if (n.kind === "text") n.text = S.textValue(n, recipientValues);
+      if (!value && n.binding?.row === "artwork" && recipientValues.source)
+        d.assets[n.asset] = recipientValues.source;
+      if (n.binding) {
+        delete n.binding.row;
+        delete n.binding.column;
+      }
+      if (value) {
+        n.binding ||= {};
+        n.binding.row = value.startsWith("field:") ? "field" : value;
+        if (n.binding.row === "field") n.binding.column = value.slice(6);
+        if (n.binding.row === "artwork") {
+          const key = "row-" + n.id;
+          d.assets[key] = d.assets[n.asset];
+          n.asset = key;
+        }
+      }
+      await mount();
+      commit();
+    });
   function inspector() {
     const ns = chosen(),
       n = single(),
@@ -315,11 +735,25 @@
       : ns.length
         ? `${ns.length} objects`
         : "Nothing selected";
+    bindingOptions(n);
     const box = bounds();
     $("selection-help").textContent = box
-      ? `${Math.round(box.width)} × ${Math.round(box.height)} ${d.page.unit} · drag to move`
+      ? `${dimension(box.width)} × ${dimension(box.height)} ${d.page.unit} · drag to move`
       : "Select an object to edit it.";
     $("selection-properties").hidden = !ns.length;
+    $("shadow-properties").hidden = !n || !["text", "image"].includes(n.kind);
+    $("shadow-enabled").checked = !!n?.shadow;
+    $("shadow-controls").hidden = !n?.shadow;
+    if (n?.shadow) {
+      for (const key of ["x", "y", "blur", "color", "opacity"])
+        $("shadow-" + key).value = n.shadow[key];
+      $("shadow-units").textContent = "Distances in " + d.page.unit + ".";
+      $("shadow-blur").max = 50 / S.unitFactor(d.page.unit);
+      for (const key of ["x", "y"]) {
+        $("shadow-" + key).min = -200 / S.unitFactor(d.page.unit);
+        $("shadow-" + key).max = 200 / S.unitFactor(d.page.unit);
+      }
+    }
     $("text-properties").hidden = n?.kind !== "text";
     $("image-properties").hidden = n?.kind !== "image";
     $("title-sponsor-property").hidden =
@@ -343,7 +777,9 @@
       $("object-opacity").value = n.opacity;
       $("object-rotation").value = n.rotation;
       if (n.kind === "text") {
-        $("text-content").value = n.text;
+        $("text-content").value = S.textValue(n, recipientValues);
+        $("text-content").readOnly = !!n.binding?.row;
+        $("text-align").value = n.textAlign || "left";
         $("text-font").value = n.font;
         $("text-color").value = n.color;
       }
@@ -377,10 +813,11 @@
     layers();
     timeline();
     if (updateInspector) inspector();
+    recipientPanel();
     state();
   }
   async function mount() {
-    scene = S.mount($("scene-host"), d);
+    scene = S.mount($("scene-host"), d, {}, await dataPreview());
     await scene.ready();
     $("selection-overlay").setAttribute(
       "viewBox",
@@ -390,12 +827,12 @@
     $("timeline-toggle").hidden = S.type(d) !== "video";
     $("overlay-preview-settings").hidden = d.template !== "overlay";
 
-    const dimension = (n) => Number(n.toFixed(d.page.unit === "in" ? 3 : 1));
     $("page-size").textContent =
       `${dimension(d.page.width)} × ${dimension(d.page.height)} ${d.page.unit}`;
     $("design-name").value = name;
     $("scrub").max = d.duration;
     render();
+    recipientPanel();
     if (fitted) fit();
     else size();
     backdrop();
@@ -844,9 +1281,41 @@
       }
     });
   };
+  $("shadow-enabled").onchange = () =>
+    mutate(() => {
+      const n = single();
+      if (!n || !editable(n) || !["text", "image"].includes(n.kind)) return;
+      if ($("shadow-enabled").checked) {
+        const f = S.unitFactor(d.page.unit);
+        n.shadow = {
+          x: 2 / f,
+          y: 2 / f,
+          blur: 3 / f,
+          color: "#000000",
+          opacity: 0.35,
+        };
+      } else delete n.shadow;
+    });
+  for (const key of ["x", "y", "blur", "color", "opacity"]) {
+    const input = $("shadow-" + key);
+    input.oninput = () => {
+      const n = single();
+      if (busy || !n?.shadow || !editable(n)) return;
+      const value = key === "color" ? input.value : Number(input.value);
+      if (key !== "color" && (!Number.isFinite(value) || !input.validity.valid))
+        return;
+      n.shadow[key] = value;
+      render(false);
+    };
+    input.onchange = input.onblur = () => {
+      inspector();
+      commit();
+    };
+  }
   const properties = {
     "text-content": ["text", false],
     "text-font": ["font", false],
+    "text-align": ["textAlign", false],
     "text-color": ["color", false],
     "image-greyscale": ["greyscale", true],
     "image-brightness": ["brightness", true],
@@ -858,6 +1327,7 @@
     input.oninput = () => {
       if (busy) return;
       for (const n of chosen().filter(editable)) {
+        if (n.binding?.row && key === "text") continue;
         const v = numeric ? Number(input.value) : input.value;
         if (numeric && !Number.isFinite(v)) return;
         n[key] = v;
@@ -1032,10 +1502,21 @@
         const file = $("image-file").files[0];
         if (!file) return;
         const asset = await imageFile(file);
-        d.assets[asset.id] = asset.source;
         let n =
           imageMode === "add" ? S.item("image", file.name) : get(imageMode);
         if (!n || !editable(n)) return;
+        if (n.binding?.row === "artwork") {
+          if (!d.dataset || !recipientID)
+            throw Error("Review and select a recipient first.");
+          d.dataset.overrides ||= {};
+          d.dataset.overrides[recipientID] = asset.source;
+          await scene.setRecipient(await dataPreview());
+          render();
+          recipientPanel();
+          commit();
+          return;
+        }
+        d.assets[asset.id] = asset.source;
         n.asset = asset.id;
         if (imageMode === "add") {
           n.x = d.page.width * 0.35;
@@ -1270,8 +1751,12 @@
         0,
       );
       $("generate-status").textContent =
-        `${count} sponsor${count === 1 ? "" : "s"} selected.` +
-        (warnings.length ? " Crowded tiers: " + warnings.join(", ") + "." : "");
+        next.template === "canvas"
+          ? "Shared canvas layout. Recipient artwork and numbers are supplied by the reviewed data."
+          : `${count} sponsor${count === 1 ? "" : "s"} selected.` +
+            (warnings.length
+              ? " Crowded tiers: " + warnings.join(", ") + "."
+              : "");
       generationReady = true;
       generationOptions();
     } catch (e) {
@@ -1302,10 +1787,13 @@
     $("generate-title").textContent = creating
       ? "Set up design"
       : "Regenerate from template";
-    $("generate-description").textContent =
-      document.template === "overlay"
-        ? "Review the template, then adjust sponsor artwork and appearance in the editor."
-        : "Choose the sponsors to include. Sizes and spacing are automatic.";
+    $("generate-description").textContent = ["overlay", "canvas"].includes(
+      document.template,
+    )
+      ? document.template === "canvas"
+        ? "Review the shared canvas layout, then choose event recipients after applying."
+        : "Review the template, then adjust sponsor artwork and appearance in the editor."
+      : "Choose the sponsors to include. Sizes and spacing are automatic.";
     $("generate-notice").textContent = creating
       ? "Start with this template, then make any edits in the editor."
       : "Apply replaces your entire design, including manual edits and uploaded originals. Undo restores the previous design.";
@@ -1351,11 +1839,16 @@
         hist = S.history(snapshot());
         state();
       } else commit();
+      if (d.dataset?.source && d.dataset.source !== "csv")
+        await refreshRecipients();
     });
   };
   $("layers-toggle").onclick = () => {
     const show = $("layers-drawer").hidden;
     $("layers-drawer").hidden = !show;
+    if (show && variable()) {
+      showData(false);
+    }
     $("studio-workspace").classList.toggle("with-layers", show);
     $("layers-toggle").setAttribute("aria-expanded", show);
     $("layers-toggle").querySelector("[data-check]").textContent = show
@@ -1483,6 +1976,7 @@
     if (data.document) {
       d.assets = data.document.assets;
       d.artworkBounds = data.document.artworkBounds;
+      if (data.document.dataset) d.dataset = data.document.dataset;
       await scene.ready();
       render();
     }
@@ -1494,7 +1988,10 @@
   async function downloadExport(format) {
     pause();
     await save();
-    const response = await request("export", { format }),
+    const response = await request("export", {
+        format,
+        recipientId: variable() ? recipientID : undefined,
+      }),
       blob = await response.blob(),
       url = URL.createObjectURL(blob),
       link = document.createElement("a");
@@ -1559,7 +2056,80 @@
   $("file-menu").addEventListener("toggle", (e) => {
     if (e.newState === "closed") exportSubmenu(false);
   });
-  let setupUnit = "px";
+  let setupUnit = "px",
+    setupCSV = "",
+    setupDataset = null;
+  function csvText(dataset) {
+    const quote = (v) => '"' + String(v ?? "").replaceAll('"', '""') + '"';
+    return [
+      dataset.columns,
+      ...dataset.rows.map((r) =>
+        dataset.columns.map((c) => r.values?.[c] || ""),
+      ),
+    ]
+      .map((row) => row.map(quote).join(","))
+      .join("\n");
+  }
+  function setupData() {
+    const source = $("setup-source").value;
+    $("setup-csv").hidden = source !== "csv";
+    $("setup-kind").querySelector('option[value="video"]').disabled =
+      source !== "none";
+    $("setup-data-summary").textContent =
+      source === "none"
+        ? "Turning variable data off keeps the previewed row as shared artwork and text."
+        : source === "event_gifts"
+          ? "Use this event’s gift recipients, artwork, names, and event details. Changes are reviewed before applying."
+          : "CSV row order is preserved. Map selected objects using Variable field in Properties.";
+  }
+  function csvColumns(dataset) {
+    setupDataset = dataset;
+    for (const id of ["setup-name-column", "setup-image-column"]) {
+      const select = $(id);
+      select.replaceChildren();
+      if (id === "setup-image-column") {
+        const o = document.createElement("option");
+        o.value = "";
+        o.textContent = "None (text only)";
+        select.append(o);
+      }
+      for (const c of dataset.columns || []) {
+        const o = document.createElement("option");
+        o.value = c;
+        o.textContent = c;
+        select.append(o);
+      }
+      select.value =
+        id === "setup-name-column"
+          ? dataset.nameColumn
+          : dataset.imageColumn || "";
+    }
+    $("setup-data-summary").textContent =
+      dataset.rows.length + " CSV rows. Choose columns, then Apply to review.";
+  }
+  $("setup-source").onchange = setupData;
+  $("setup-csv-file").onchange = () =>
+    run(async () => {
+      try {
+        const file = $("setup-csv-file").files[0];
+        if (!file) return;
+        if (file.size > 1048576) throw Error("CSV exceeds 1 MB");
+        setupCSV = await file.text();
+        const ds = await (
+          await request("recipient-data", {
+            source: "csv",
+            csv: setupCSV,
+            imageColumn: "auto",
+          })
+        ).json();
+        csvColumns(ds);
+        $("setup-error").textContent = "";
+      } catch (e) {
+        setupCSV = "";
+        setupDataset = null;
+        $("setup-error").textContent = e.message;
+      }
+    });
   function setupType() {
     const kind = $("setup-kind").value;
     if (kind === "video" && $("setup-unit").value !== "px") {
@@ -1570,6 +2140,7 @@
       .querySelectorAll("option")
       .forEach((o) => (o.disabled = kind === "video" && o.value !== "px"));
     $("setup-duration-label").hidden = kind !== "video";
+    $("setup-variable-section").hidden = kind !== "graphic";
   }
   function convertSetupUnits() {
     const unit = $("setup-unit").value,
@@ -1583,12 +2154,20 @@
   $("document-setup").onclick = () => {
     pause();
     $("setup-kind").value = S.type(d);
+    $("setup-kind").querySelector('option[value="video"]').disabled =
+      !!d.dataset;
     setupUnit = d.page.unit;
     $("setup-unit").value = setupUnit;
     for (const key of ["width", "height"])
       $("setup-" + key).value = d.page[key];
     $("setup-duration").value = d.duration || 5;
     $("setup-error").textContent = "";
+    $("setup-source").value = d.dataset?.source || "none";
+    setupCSV = d.dataset?.source === "csv" ? csvText(d.dataset) : "";
+    setupDataset = d.dataset?.source === "csv" ? d.dataset : null;
+    $("setup-csv-file").value = "";
+    setupData();
+    if (setupDataset) csvColumns(setupDataset);
     setupType();
     $("document-dialog").showModal();
   };
@@ -1611,6 +2190,37 @@
         const duration =
           Math.round(Number($("setup-duration").value) * 30) / 30;
         const next = S.configure(d, page, kind, duration);
+        const source = kind === "graphic" ? $("setup-source").value : "none";
+        let reviewed = null;
+        if (source === "none") {
+          S.walk(next.nodes, (n) => {
+            if (!n.binding?.row) return;
+            if (n.kind === "text") n.text = S.textValue(n, recipientValues);
+            if (n.binding.row === "artwork" && recipientValues.source)
+              next.assets[n.asset] = recipientValues.source;
+            delete n.binding.row;
+            delete n.binding.column;
+          });
+          delete next.dataset;
+        } else if (source === "csv") {
+          if (!setupCSV || !setupDataset)
+            throw Error("Choose a CSV file first.");
+          reviewed = await (
+            await request("recipient-data", {
+              source,
+              csv: setupCSV,
+              nameColumn: $("setup-name-column").value,
+              imageColumn: $("setup-image-column").value,
+            })
+          ).json();
+        } else if (d.dataset?.source !== source) {
+          reviewed = await (await request("recipient-data", { source })).json();
+        }
+        // Keep setup atomic: review row changes before replacing the saved source.
+        if (reviewed) {
+          next.dataset = d.dataset || null;
+        }
+
         // Server validation gives setup the same bounds as saved documents and exports.
         await request("prepare-layout", { document: next });
         zoom *= S.unitFactor(next.page.unit) / S.unitFactor(d.page.unit);
@@ -1621,6 +2231,7 @@
         layoutMode();
         commit();
         $("document-dialog").close();
+        if (reviewed) reviewData(reviewed);
       } catch (e) {
         $("setup-error").textContent = e.message || String(e);
       }
@@ -1779,6 +2390,7 @@
     if (fitted && scene) fit();
   }).observe(viewport);
   if (d.template === "overlay") $("preview-background").value = "dark";
+  if (variable()) showData(true);
   if (d.needsArrange) {
     openTemplateSetup(d, true);
   } else {
@@ -1786,6 +2398,7 @@
       await mount();
       hist = S.history(snapshot());
       seek(0);
+      if (variable() && d.dataset.source !== "csv") await refreshRecipients();
     });
   }
 })();

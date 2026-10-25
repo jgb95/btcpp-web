@@ -152,9 +152,9 @@ This will put all the files necessary to serve the site into `target/`
 
 ## Studio
 
-Event admins can create and edit banners, sponsor overlays, and reels from the
-Studio dashboard. Graphics export as PDF/PNG; videos export as MP4. See
-[Studio usage and export requirements](docs/studio.md).
+Event admins can create and edit banners, sponsor overlays, reels, and canvas
+gifts from the Studio dashboard. Graphics export as PDF/PNG; videos export as
+MP4. See [Studio usage and export requirements](docs/studio.md).
 
 ## Recording autopublisher
 

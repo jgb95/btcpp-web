@@ -32,6 +32,9 @@ func studioImage(d *studio.Document, id, name, source string, x, y, w, h float64
 	return n
 }
 func studioDefault(app *config.AppContext, conf *types.Conf, kind string) (studio.Document, error) {
+	if kind == "canvas" {
+		return studioCanvasTemplate(conf), nil
+	}
 	if kind != "banner" && kind != "overlay" && kind != "reel" {
 		return studio.Document{}, fmt.Errorf("unknown production")
 	}
